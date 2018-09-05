@@ -1,0 +1,363 @@
+let io = import! "std/io.glu"
+
+let function = import! "std/function.glu"
+let { (|>) } = function
+
+let types = import! "std/types.glu"
+let { Option } = types
+
+let test = import! "std/test.glu"
+let { assert } = test
+
+let string = import! "std/string.glu"
+let (++) = string.monoid.semigroup.append
+let { (==) } = string.eq
+
+let falcon_prim = import! "falcon_prim"
+let falcon_analysis_prim = import! "falcon_analysis_prim"
+let falcon_architecture_prim = import! "falcon_architecture_prim"
+let falcon_il_prim = import! "falcon_il_prim"
+let falcon_loader_prim = import! "falcon_loader_prim"
+
+
+let unwrap option = 
+    match option with
+    | Some x -> x
+    | None -> error "unwrapped option with value None"
+
+
+type Expression = | Scalar   IlScalar
+                  | Constant IlConstant
+                  | Add      IlExpression IlExpression
+                  | Sub      IlExpression IlExpression
+                  | Mul      IlExpression IlExpression
+                  | Divu     IlExpression IlExpression
+                  | Modu     IlExpression IlExpression
+                  | Divs     IlExpression IlExpression
+                  | Mods     IlExpression IlExpression
+                  | And      IlExpression IlExpression
+                  | Or       IlExpression IlExpression
+                  | Xor      IlExpression IlExpression
+                  | Shl      IlExpression IlExpression
+                  | Shr      IlExpression IlExpression
+                  | Cmpeq    IlExpression IlExpression
+                  | Cmpneq   IlExpression IlExpression
+                  | Cmplts   IlExpression IlExpression
+                  | Cmpltu   IlExpression IlExpression
+                  | Zext     Int IlExpression
+                  | Sext     Int IlExpression
+                  | Trun     Int IlExpression
+                  | Ite      IlExpression IlExpression IlExpression
+
+let expression_match expression =
+    let get_lhs = falcon_il_prim.expression_get_lhs
+    let get_rhs = falcon_il_prim.expression_get_rhs
+    let get_cond = falcon_il_prim.expression_get_cond
+    let get_then = falcon_il_prim.expression_get_then
+    let get_else = falcon_il_prim.expression_get_else
+    let get_bits = falcon_il_prim.expression_get_bits
+
+    let typ = falcon_il_prim.expression_type expression
+
+    if typ == "scalar" then
+        Scalar (falcon_il_prim.expression_get_scalar expression)
+    else if typ == "constant" then
+        Constant (falcon_il_prim.expression_get_constant expression)
+    else if typ == "add" then
+        Add (get_lhs expression) (get_rhs expression)
+    else if typ == "sub" then
+        Sub (get_lhs expression) (get_rhs expression)
+    else if typ == "mul" then
+        Mul (get_lhs expression) (get_rhs expression)
+    else if typ == "divu" then
+        Divu (get_lhs expression) (get_rhs expression)
+    else if typ == "modu" then
+        Modu (get_lhs expression) (get_rhs expression)
+    else if typ == "divs" then
+        Divs (get_lhs expression) (get_rhs expression)
+    else if typ == "mods" then
+        Mods (get_lhs expression) (get_rhs expression)
+    else if typ == "and" then
+        And (get_lhs expression) (get_rhs expression)
+    else if typ == "or" then
+        Or (get_lhs expression) (get_rhs expression)
+    else if typ == "xor" then
+        Xor (get_lhs expression) (get_rhs expression)
+    else if typ == "shl" then
+        Shl (get_lhs expression) (get_rhs expression)
+    else if typ == "shr" then
+        Shr (get_lhs expression) (get_rhs expression)
+    else if typ == "cmpeq" then
+        Cmpeq (get_lhs expression) (get_rhs expression)
+    else if typ == "cmpneq" then
+        Cmpneq (get_lhs expression) (get_rhs expression)
+    else if typ == "cmplts" then
+        Cmplts (get_lhs expression) (get_rhs expression)
+    else if typ == "cmpltu" then
+        Cmpltu (get_lhs expression) (get_rhs expression)
+    else if typ == "zext" then
+        Zext (get_bits expression) (get_rhs expression)
+    else if typ == "sext" then
+        Sext (get_bits expression) (get_rhs expression)
+    else if typ == "trun" then
+        Trun (get_bits expression) (get_rhs expression)
+    else if typ == "ite" then
+        Ite (get_cond expression) (get_then expression) (get_else expression)
+    else
+        error "Invalid expression type"
+
+
+type Operation = | Assign IlScalar IlExpression
+                 | Store  IlExpression IlExpression
+                 | Load   IlScalar IlExpression
+                 | Branch IlExpression
+                 | Raise  IlExpression
+
+let operation_match operation =
+    let fip = falcon_il_prim
+    let typ = fip.operation_type operation
+
+    if typ == "assign" then
+        Assign (fip.operation_assign_dst operation) (fip.operation_assign_src operation)
+    else if typ == "store" then
+        Store (fip.operation_store_index operation) (fip.operation_store_src operation)
+    else if typ == "load" then
+        Load (fip.operation_load_dst operation) (fip.operation_load_index operation)
+    else if typ == "branch" then
+        Branch (fip.operation_branch_target operation)
+    else if typ == "raise" then
+        Raise (fip.operation_raise_expr operation)
+    else
+        error ("bad operation type" ++ typ)
+
+
+type FunctionLocation = | Instruction IlBlock IlInstruction
+                        | Edge IlEdge
+                        | EmptyBlock IlBlock
+
+let function_location_match function_location function =
+    let fl = function_location
+    let fip = falcon_il_prim
+    let typ = fip.function_location_type fl
+
+    if typ == "instruction" then
+        let block = fip.function_location_block_get fl function |> unwrap
+        let instruction = fip.function_location_instruction_get fl function |> unwrap
+        Instruction block instruction
+    else if typ == "edge" then
+        Edge (fip.function_location_edge_get fl function |> unwrap)
+    else if typ == "empty_block" then
+        EmptyBlock (fip.function_location_block_get fl function |> unwrap)
+    else
+        error ("bad function_location type" ++ typ)
+
+
+let edge_condition edge =
+    if falcon_il_prim.edge_has_condition edge then
+        Some (falcon_il_prim.edge_condition edge)
+    else
+        None
+
+
+{
+    env = falcon_prim.env,
+    eval = falcon_prim.eval,
+    hex = falcon_prim.hex,
+    int_to_string = falcon_prim.int_to_string,
+    println = falcon_prim.println,
+
+    analysis = {
+        dead_code_elimination = falcon_analysis_prim.dead_code_elimination,
+
+        constants = {
+            analysis = falcon_analysis_prim.constants_analysis,
+            eval = falcon_analysis_prim.constants_eval,
+            scalar = falcon_analysis_prim.constants_scalar
+        }
+    },
+
+    architecture = {
+        endian = falcon_architecture_prim.architecture_endian
+    },
+
+    il = {
+        block = {
+            index = falcon_il_prim.block_index,
+            instructions = falcon_il_prim.block_instructions,
+            assign = falcon_il_prim.block_assign,
+            store = falcon_il_prim.block_store,
+            load = falcon_il_prim.block_load,
+            branch = falcon_il_prim.block_branch,
+            raise = falcon_il_prim.block_raise,
+            str = falcon_il_prim.block_str
+        },
+
+        control_flow_graph = {
+            blocks = falcon_il_prim.control_flow_graph_blocks,
+            dot_graph = falcon_il_prim.control_flow_graph_dot_graph,
+            edges = falcon_il_prim.control_flow_graph_edges,
+            str = falcon_il_prim.control_flow_graph_str
+        },
+
+        constant = {
+            bits = falcon_il_prim.constant_bits,
+            eq = falcon_il_prim.constant_eq,
+            format = falcon_il_prim.constant_format,
+            new = falcon_il_prim.constant_new,
+            str = falcon_il_prim.constant_str,
+            value_u64 = falcon_il_prim.constant_value_u64
+        },
+
+        edge = {
+            condition = falcon_il_prim.edge_condition,
+            head = falcon_il_prim.edge_head,
+            tail = falcon_il_prim.edge_tail,
+            str = falcon_il_prim.edge_str
+        },
+
+        expression = {
+            format = falcon_il_prim.expression_format,
+            scalar = falcon_il_prim.expression_scalar,
+            constant = falcon_il_prim.expression_constant,
+            add = falcon_il_prim.expression_add,
+            sub = falcon_il_prim.expression_sub,
+            mul = falcon_il_prim.expression_mul,
+            divu = falcon_il_prim.expression_divu,
+            modu = falcon_il_prim.expression_modu,
+            divs = falcon_il_prim.expression_divs,
+            mods = falcon_il_prim.expression_mods,
+            and_ = falcon_il_prim.expression_and,
+            or = falcon_il_prim.expression_or,
+            xor = falcon_il_prim.expression_xor,
+            shl = falcon_il_prim.expression_shl,
+            shr = falcon_il_prim.expression_shr,
+            cmpeq = falcon_il_prim.expression_cmpeq,
+            cmpneq = falcon_il_prim.expression_cmpneq,
+            cmplts = falcon_il_prim.expression_cmplts,
+            cmpltu = falcon_il_prim.expression_cmpltu,
+            zext = falcon_il_prim.expression_zext,
+            sext = falcon_il_prim.expression_sext,
+            trun = falcon_il_prim.expression_trun,
+            ite = falcon_il_prim.expression_ite,
+            match_ = expression_match,
+            str = falcon_il_prim.expression_str
+        },
+
+        function = {
+            address = falcon_il_prim.function_address,
+            block = falcon_il_prim.function_block,
+            blocks = falcon_il_prim.function_blocks,
+            control_flow_graph = falcon_il_prim.function_control_flow_graph,
+            index = falcon_il_prim.function_index,
+            name = falcon_il_prim.function_name
+        },
+
+        function_location = {
+            edge = falcon_il_prim.function_location_edge,
+            empty_block = falcon_il_prim.function_location_empty_block,
+            instruction = falcon_il_prim.function_location_instruction,
+            match_ = function_location_match
+        },
+
+        instruction = {
+            address = falcon_il_prim.instruction_address,
+            format = falcon_il_prim.instruction_format,
+            index = falcon_il_prim.instruction_index,
+            operation = falcon_il_prim.instruction_operation,
+            str = falcon_il_prim.instruction_str
+        },
+
+        operation = {
+            format = falcon_il_prim.operation_format,
+            assign = falcon_il_prim.operation_assign,
+            store = falcon_il_prim.operation_store,
+            load = falcon_il_prim.operation_load,
+            branch = falcon_il_prim.operation_branch,
+            raise = falcon_il_prim.operation_raise,
+            match_ = operation_match,
+            str = falcon_il_prim.operation_str
+        },
+
+        program = {
+            add_function = falcon_il_prim.program_add_function,
+            format = falcon_il_prim.program_location_format,
+            function_by_address = falcon_il_prim.program_function_by_address,
+            function_by_name = falcon_il_prim.program_function_by_name,
+            functions = falcon_il_prim.program_functions,
+            new = falcon_il_prim.program_new
+        },
+
+        program_location = {
+            format = falcon_il_prim.program_location_format,
+            from_address = falcon_il_prim.program_location_from_address,
+            function_location = falcon_il_prim.program_location_function_location,
+            instruction = falcon_il_prim.program_location_instruction,
+            new = falcon_il_prim.program_location_new
+        },
+
+        scalar = {
+            bits = falcon_il_prim.scalar_bits,
+            eq = falcon_il_prim.scalar_eq,
+            format = falcon_il_prim.scalar_format,
+            new = falcon_il_prim.scalar_new,
+            name = falcon_il_prim.scalar_name,
+            str = falcon_il_prim.scalar_str
+        }
+    },
+
+    loader = {
+        elf = {
+            architecture = falcon_loader_prim.elf_architecture,
+            base_address = falcon_loader_prim.elf_base_address,
+            from_file = falcon_loader_prim.elf_from_file,
+            function_entries = falcon_loader_prim.elf_function_entries,
+            function = falcon_loader_prim.elf_function,
+            memory = falcon_loader_prim.elf_memory,
+            program = falcon_loader_prim.elf_program,
+            program_recursive = falcon_loader_prim.elf_program_recursive
+        },
+
+        elf_linker = {
+            architecture = falcon_loader_prim.elf_linker_architecture,
+            function = falcon_loader_prim.elf_linker_function,
+            function_entries = falcon_loader_prim.elf_linker_function_entries,
+            memory = falcon_loader_prim.elf_linker_memory,
+            new = falcon_loader_prim.elf_linker_new,
+            program = falcon_loader_prim.elf_linker_program,
+            program_entry = falcon_loader_prim.elf_linker_program_entry,
+            program_recursive = falcon_loader_prim.elf_linker_program_recursive
+        },
+
+        function_entry = {
+            name = falcon_loader_prim.function_entry_name,
+            address = falcon_loader_prim.function_entry_address,
+            str = falcon_loader_prim.function_entry_str
+        },
+
+        loader = {
+            architecture = falcon_loader_prim.loader_architecture,
+            from_file = falcon_loader_prim.loader_from_file,
+            function_entries = falcon_loader_prim.loader_function_entries,
+            function = falcon_loader_prim.loader_function,
+            memory = falcon_loader_prim.loader_memory,
+            program = falcon_loader_prim.loader_program,
+            program_recursive = falcon_loader_prim.loader_program_recursive,
+        },
+        
+        pe = {
+            architecture = falcon_loader_prim.pe_architecture,
+            from_file = falcon_loader_prim.pe_from_file,
+            function_entries = falcon_loader_prim.pe_function_entries,
+            function = falcon_loader_prim.pe_function,
+            memory = falcon_loader_prim.pe_memory,
+            program = falcon_loader_prim.pe_program,
+            program_recursive = falcon_loader_prim.pe_program_recursive
+        }
+    },
+
+    types = {
+        Operation,
+        Expression,
+        FunctionLocation
+    }
+}

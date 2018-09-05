@@ -1,0 +1,34 @@
+[package]
+name = "finch"
+version = "0.0.1"
+authors = [ "Alex Eubanks <endeavor@rainbowsandpwnies.com>" ]
+repository = "https://github.com/falconre/finch"
+description = "Symbolic Execution against Falcon IL"
+license = "Apache-2.0"
+readme = "README.md"
+
+[dependencies]
+byteorder = "1.2"
+clap = "2.26"
+error-chain = "0.12"
+falcon = "0.4.1"
+falcon_capstone = "0.2.1"
+falcon-z3 = "0.4.1"
+goblin = "0.0.15"
+lazy_static = "1.0"
+log = "0.4"
+nom = "4.0"
+rayon = "1.0"
+rustyline = "1.0.0"
+serde = "1.0"
+serde_derive = "1.0"
+simplelog = "0.5"
+#unicorn = { git="https://github.com/endeav0r/unicorn-rs" }
+
+[lib]
+name = "finch"
+path = "lib/lib.rs"
+
+[[bin]]
+name = "finch-bin"
+path = "src/main.rs"

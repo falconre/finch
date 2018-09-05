@@ -1,0 +1,59 @@
+let int = import! "std/int.glu"
+let list = import! "std/list.glu"
+let { List } = list
+let option = import! "std/option.glu"
+let { Option } = option
+let result = import! "std/result.glu"
+let { Result } = result
+
+let show_int = int.show.show
+
+
+/// Convenience function. Unwrap an option or throw an error with the given
+/// error message
+let some_err opt error_msg
+  : Option a ->
+    String ->
+    a =
+
+  match opt with
+  | Some o -> o
+  | None -> error error_msg
+
+
+let ok_err result error_msg
+  : Result e a ->
+    String ->
+    a =
+  
+  match result with
+  | Ok a -> a
+  | Err _ -> error error_msg
+
+
+let list_append l r
+  : List a ->
+    List a ->
+    List a =
+  
+  let f xs : List a -> List a =
+    match xs with
+    | Cons x xxs -> Cons x (f xxs)
+    | Nil -> r
+  
+  f l
+
+
+let list_len l : List a -> Int =
+  match l with
+  | Cons _ ll -> 1 + (list_len ll)
+  | Nil -> 0
+
+
+{
+  list_append,
+  list_len,
+  ok_err,
+  show_int,
+  some_err
+}

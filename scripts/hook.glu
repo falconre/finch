@@ -1,0 +1,146 @@
+let array = import! std.array
+let list = import! "std/list.glu"
+let { List } = list
+let falcon = import! "scripts/falcon.glu"
+let finch = import! "scripts/finch.glu"
+let string = import! std.string
+let (++) = string.monoid.semigroup.append
+let symdriver = import! "scripts/symdriver.glu"
+let utility = import! "scripts/utility.glu"
+let {some_err} = utility
+
+let {SymDriver} = symdriver
+
+type Hook = {
+    name: String,
+    hook: SymDriver -> Option (List SymDriver)
+}
+
+
+//
+// Code for hooking
+//
+let hooks = Nil
+
+
+
+/// Get addresses of a function symbol
+let get_function_addresses binary function_name =
+  let f i function_entries =
+    if (array.len function_entries) == i then
+      Nil
+    else
+      let function_entry = array.index function_entries i
+      let name = falcon.loader.function_entry.name function_entry
+      match name with
+      | Some name ->
+        let address = falcon.loader.function_entry.address function_entry
+        if name == function_name then
+          Cons address (f (i + 1) function_entries)
+        else
+          f (i + 1) function_entries
+      | None -> f (i + 1) function_entries
+  f 0 (falcon.loader.elf_linker.function_entries binary)
+
+
+
+/// Take a hook, wrap it with a predicate that a driver hits a specific fuction,
+/// and add it to a list of hooks
+let add_hook_name hooks binary function_name hook
+  : List Hook ->
+    LoaderElfLinker ->
+    String ->
+    (SymDriver -> Option (List SymDriver))
+    -> List Hook =
+
+  let s = "add_hook_name for function "
+  let s = string.append s function_name
+  falcon.println s
+
+  let f addresses =
+    match addresses with
+    | Cons address addresses ->
+      falcon.println (falcon.hex address)
+      let predicated_hook = (\driver ->
+        match symdriver.address driver with
+        | Some driver_address ->
+          if driver_address == address then
+            hook driver
+          else
+            None
+        | None -> None)
+      Cons {name=function_name, hook=predicated_hook} (f addresses)
+    | Nil -> Nil
+  
+  let new_hooks = f (get_function_addresses binary function_name)
+
+  utility.list_append hooks new_hooks
+
+
+/// Add a hook that kills a driver when the driver hits a given address.
+let add_hook_kill_address hooks address
+  : List Hook ->
+    Int ->
+    List Hook =
+  
+  let name = "kill_address_0x" ++ (falcon.hex address)
+  let hook = (\driver ->
+    match symdriver.address driver with
+    | Some driver_address ->
+      if driver_address == address then None else Some (Cons driver Nil)
+    | None -> Some (Cons driver Nil))
+  Cons {name=name, hook=hook} hooks
+
+
+/// Add a hook to print a variable at an address
+let add_hook_address_variable hooks address name
+  : List Hook ->
+    Int ->
+    String ->
+    List Hook =
+
+  let hook = (\driver ->
+    match symdriver.address driver with
+    | Some addr ->
+      if addr == address then
+        let state = finch.driver.state driver.driver
+        let exp = finch.state.scalar state name
+        let exp = some_err exp "Could not get expression"
+        let s = string.append (falcon.hex address) " "
+        let s = string.append s name
+        let s = string.append s " "
+        let s = string.append s (falcon.il.expression.format exp)
+        falcon.println s
+        None
+      else
+        None
+    | None -> None)
+  
+  Cons {name="hook_address_variable", hook=hook} hooks
+
+/// Run through all of the hooks. If a hook executes on this driver, return the
+/// new driver. Otherwise, returns None
+let run_hooks hooks driver
+  : List Hook ->
+    SymDriver ->
+    Option (List SymDriver) =
+  
+  let f hooks driver =
+    match hooks with
+    | Cons hook hooks ->
+      match hook.hook driver with
+      | Some driver -> Some driver
+      | None -> f hooks driver
+    | Nil -> None
+  
+  f hooks driver
+
+
+{
+  Hook,
+
+  add_hook_address_variable,
+  add_hook_kill_address,
+  add_hook_name,
+  run_hooks
+}

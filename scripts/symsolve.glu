@@ -1,0 +1,107 @@
+// This script takes the path to a binary, and the name of a function, and
+// prints out a graphviz dot graph of that function in Falcon IL.
+
+
+// Some standard boilerplate stuff for gluon
+let array = import! std.array
+let char = import! std.char
+let int = import! std.int
+let list = import! std.list
+let { List } = list
+let option = import! std.option
+let { Option } = option
+let result = import! std.result
+let { Result } = result
+
+let string = import! std.string
+
+// Import finch libraries
+let hook = import! "scripts/hook.glu"
+let falcon = import! "scripts/falcon.glu"
+let finch = import! "scripts/finch.glu"
+let libc = import! "scripts/libc.glu"
+let symdriver = import! "scripts/symdriver.glu"
+let { SymDriver } = symdriver
+let { list_len, ok_err, show_int, some_err } = import! "scripts/utility.glu"
+
+
+// Arguments to our script
+let filename = some_err (falcon.env "FILENAME") "Could not find FILENAME"
+
+let (binary, start_driver) = symdriver.standard_load filename
+
+let driver_address =
+  some_err (symdriver.address start_driver) "Failed to get program address"
+
+falcon.println (string.append "Start address: " (falcon.hex driver_address))
+
+let hooks = libc.libc_hooks binary
+
+//
+// Additional hooks go here
+//
+// let hooks = hook.add_hook_kill_address hooks 0x46004ce4
+let hooks = hook.add_hook_address_variable hooks 0x46004b8c "$a1"
+let hooks = hook.add_hook_address_variable hooks 0x46004b90 "$a1"
+let hooks = hook.add_hook_address_variable hooks 0x46004b9c "$a1"
+let hooks = hook.add_hook_address_variable hooks 0x46004cf0 "$a1"
+let hooks = hook.add_hook_address_variable hooks 0x46004e30 "$s1"
+let hooks = hook.add_hook_address_variable hooks 0x46004dcc "$v0"
+let hooks = hook.add_hook_address_variable hooks 0x46004dcc "$s2"
+let hooks = hook.add_hook_address_variable hooks 0x46004dc4 "$t0"
+let hooks = hook.add_hook_address_variable hooks 0x46004c84 "$t0"
+let hooks = hook.add_hook_address_variable hooks 0x4601a1e0 "$v0"
+let hooks = hook.add_hook_address_variable hooks 0x4601a1e0 "$a0"
+let hooks = hook.add_hook_address_variable hooks 0x4601a1e0 "$a1"
+let hooks = hook.add_hook_address_variable hooks 0x4601a1e0 "$a2"
+let hooks = hook.add_hook_address_variable hooks 0x4601a1e0 "$a3"
+
+let error_message = symdriver.get_string start_driver 0x403c34
+match error_message with
+| Some error_message ->
+  falcon.println (string.append "get_string test: " error_message)
+| None -> error "Could not get string"
+
+// let start_driver = symdriver.drive_and_merge start_driver 0x4017f0 10000000
+// let start_driver = some_err start_driver "failed to drive to entrypoint"
+
+let drivers = symdriver.drive_to_address start_driver 0x4010bc 100000 hooks
+
+falcon.println (string.append "# Drivers found: 0x" (falcon.hex (list_len drivers)))
+
+let driver = symdriver.merge_list drivers
+let driver = some_err driver "Failed to get merged drivers"
+
+let state = finch.driver.state driver.driver
+let scalar = finch.state.scalar state "$a0"
+let scalar = some_err scalar "Could not get $a0"
+falcon.println("$a0 is")
+falcon.println (falcon.il.expression.format scalar)
+
+let e = finch.driver.load driver.driver 0xbfff0000 8
+let e = some_err e "could not get expression at 0xbfff0000"
+falcon.println (falcon.il.expression.format e)
+
+finch.state.debug state
+
+falcon.println "Driver remaining"
+
+let address =
+  match symdriver.address driver with
+  | Some address -> address
+  | None -> error "Could not get address"
+
+falcon.println (string.append "address: " (falcon.hex address))
+
+falcon.println "Symbolic strings: "
+
+let print_symbolic_strings symbolic_strings =
+  match symbolic_strings with
+  | Cons symbolic_string ss ->
+    falcon.println symbolic_string.name
+    print_symbolic_strings ss
+  | Nil -> ()
+
+print_symbolic_strings driver.symbolic_strings
+
+()
