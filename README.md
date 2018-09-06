@@ -2,7 +2,7 @@
 
 **You are looking at an early pre-release of Finch**. There is essentially no documentation at this point in time.
 
-Finch is a Symbolic Executor against Falcon IL. If it lifts to Falcon IL, it symbolically executes with Finch.
+Finch is a Symbolic Executor over Falcon IL. If it lifts to Falcon IL, it symbolically executes with Finch.
 
 # Notes on memory model
 
