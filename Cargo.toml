@@ -1,5 +1,5 @@
 [package]
-name = "finch"
+name = "falcon-finch"
 version = "0.0.1"
 authors = [ "Alex Eubanks <endeavor@rainbowsandpwnies.com>" ]
 repository = "https://github.com/falconre/finch"
@@ -11,9 +11,9 @@ readme = "README.md"
 byteorder = "1.2"
 clap = "2.26"
 error-chain = "0.12"
-falcon = "0.4.1"
+falcon = "0.4.2"
 falcon_capstone = "0.2.1"
-falcon-z3 = "0.4.1"
+falcon-z3 = "0.4.2"
 goblin = "0.0.15"
 lazy_static = "1.0"
 log = "0.4"

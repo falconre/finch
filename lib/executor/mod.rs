@@ -123,6 +123,36 @@ pub fn expression_complexity(expression: &il::Expression) -> usize {
 
 
 pub fn simplify(expression: &il::Expression) -> Result<il::Expression> {
+
+    fn simplify_zext(bits: usize, expression: &il::Expression)
+        -> Result<il::Expression> {
+
+        // Get rid of nested zext(zext())
+        match expression {
+            il::Expression::Zext(_, expression) =>
+                return Ok(il::Expression::zext(bits, simplify(expression)?)?),
+            _ => {}
+        };
+
+        Ok(il::Expression::zext(bits, simplify(expression)?)?)
+    }
+
+    fn simplify_trun(bits: usize, expression: &il::Expression)
+        -> Result<il::Expression> {
+
+        // Get rid of nested trun(zext()) patterns
+        match expression {
+            il::Expression::Zext(_, expression) =>
+                if expression.bits() == bits {
+                    return simplify(expression);
+                },
+            _ => {}
+        };
+
+        Ok(il::Expression::trun(bits, simplify(expression)?)?)
+    }
+
+
     if expression.all_constants() {
         Ok(eval(expression)?.into())
     }
@@ -162,12 +192,10 @@ pub fn simplify(expression: &il::Expression) -> Result<il::Expression> {
                 il::Expression::cmplts(simplify(lhs)?, simplify(rhs)?)?,
             il::Expression::Cmpltu(ref lhs, ref rhs) =>
                 il::Expression::cmpltu(simplify(lhs)?, simplify(rhs)?)?,
-            il::Expression::Trun(bits, ref rhs) =>
-                il::Expression::trun(bits, simplify(rhs)?)?,
+            il::Expression::Trun(bits, ref rhs) => simplify_trun(bits, rhs)?,
             il::Expression::Sext(bits, ref rhs) =>
                 il::Expression::sext(bits, simplify(rhs)?)?,
-            il::Expression::Zext(bits, ref rhs) =>
-                il::Expression::zext(bits, simplify(rhs)?)?,
+            il::Expression::Zext(bits, ref rhs) => simplify_zext(bits, rhs)?,
             il::Expression::Ite(ref cond, ref then, ref else_) =>
                 il::Expression::ite(simplify(cond)?,
                                     simplify(then)?,
