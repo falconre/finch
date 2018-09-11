@@ -4,7 +4,6 @@ use executor::*;
 use executor::successor::*;
 use falcon_z3::il::solve;
 use platform::Platform;
-use std::borrow::Borrow;
 use std::collections::BTreeMap;
 
 
@@ -23,7 +22,7 @@ pub struct State<P: Platform<P>> {
     /// the memory model for this state
     pub(crate) memory: Memory,
     /// the platform for this state
-    pub(crate) platform: Option<Box<P>>,
+    pub(crate) platform: Box<P>,
     /// all symbolic scalars that have been created for this state
     symbolic_strings: BTreeMap<String, SymbolicString>,
     /// the next address to create a symbolic value in memory
@@ -33,7 +32,7 @@ pub struct State<P: Platform<P>> {
 
 impl<P: Platform<P>> State<P> {
     /// Create a new `State` from the given memory model.
-    pub fn new(memory: Memory, platform: Option<Box<P>>)
+    pub fn new(memory: Memory, platform: Box<P>)
         -> State<P> {
 
         State {
@@ -201,13 +200,13 @@ impl<P: Platform<P>> State<P> {
 
 
     /// Get the `Platform` for this `State`.
-    pub fn platform(&self) -> Option<&Box<P>> {
+    pub fn platform(&self) -> &P {
         self.platform.as_ref()
     }
 
 
     /// Get a mutable reference to the `Platform` for this `State`.
-    pub fn platform_mut(&mut self) -> Option<&mut Box<P>> {
+    pub fn platform_mut(&mut self) -> &mut P {
         self.platform.as_mut()
     }
 
@@ -516,15 +515,9 @@ impl<P: Platform<P>> State<P> {
             }
         }
 
-        self.platform = match self.platform {
-            Some(ref mut platform) => {
-                let mut platform = platform.box_clone();
-                platform.merge(Box::borrow(other.platform().unwrap()),
-                                           &other_constraints)?;
-                Some(platform)
-            }
-            None => None
-        };
+        if !self.platform.merge(other.platform(), &other_constraints)? {
+            bail!("Platforms did not merge correctly");
+        }
 
         // add constraints to merged constraints
         self.add_merged_constraints(other.path_constraints())?;
@@ -630,10 +623,7 @@ impl<P: Platform<P>> Clone for State<P> {
             path_constraints: self.path_constraints.clone(),
             merged_constraints: self.merged_constraints.clone(),
             memory: self.memory.clone(),
-            platform: match self.platform {
-                Some(ref platform) => Some(platform.box_clone()),
-                None => None
-            },
+            platform: self.platform.box_clone(),
             symbolic_strings: self.symbolic_strings.clone(),
             symbolic_memory_address: self.symbolic_memory_address
         }

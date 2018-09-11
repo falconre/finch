@@ -1,5 +1,5 @@
 use error::*;
-use executor::Driver;
+use finch::executor::Driver;
 use platform::Platform;
 
 

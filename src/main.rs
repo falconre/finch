@@ -27,6 +27,7 @@ pub mod error {
         }
 
         foreign_links {
+            Falcon(::falcon::error::Error);
             Finch(::finch::error::Error);
             IoError(::std::io::Error);
             ReadLineError(::rustyline::error::ReadlineError);
@@ -36,15 +37,29 @@ pub mod error {
 
 
 use error::*;
-use finch::executor;
+use falcon::loader::Loader;
+use finch::executor::Driver;
 use finch::platform;
+use finch::platform::Platform;
 use std::path::{Path, PathBuf};
 
 
-fn quick(filename: &str, base_path: Option<PathBuf>) -> Result<()> {
-    let driver = platform::linux::Mips::standard_load(filename, base_path)?;
-    driver::drive_to_address(driver, 0x40107c, 4000000)?;
-    Ok(())
+fn run2<P: Platform<P>>(driver: Driver<P>, matches: &clap::ArgMatches)
+    -> Result<()> {
+
+    if matches.is_present("debugger") {
+        let debugger = debugger::Debugger::new(vec![driver]);
+        let mut interpreter = interpreter::Interpreter::new(debugger);
+        interpreter.interactive()
+    }
+    else if let Some(debugger_script) = matches.value_of("debugger_script") {
+        let debugger = debugger::Debugger::new(vec![driver]);
+        let mut interpreter = interpreter::Interpreter::new(debugger);
+        interpreter.script(Path::new(debugger_script))
+    }
+    else {
+        bail!("Require option debugger or debugger_script")
+    }
 }
 
 
@@ -93,7 +108,8 @@ fn run() -> Result<()> {
                 "info" => Some(simplelog::LevelFilter::Info),
                 "trace" => Some(simplelog::LevelFilter::Trace),
                 "warn" => Some(simplelog::LevelFilter::Warn),
-                _ => Some(simplelog::LevelFilter::Error)
+                "error" => Some(simplelog::LevelFilter::Error),
+                _ => bail!("Invalid log level")
             };
         if let Some(level_filter) = level_filter {
             simplelog::TermLogger::init(
@@ -103,35 +119,37 @@ fn run() -> Result<()> {
         }
     }
 
-    if matches.is_present("debugger") {
-        let driver = platform::linux::Mips::standard_load(filename, base_path)?;
-        let debugger = debugger::Debugger::new(vec![driver]);
-        let mut interpreter = interpreter::Interpreter::new(debugger);
-        interpreter.interactive()
+    // let's determine the architecture of the target binary
+    let elf = falcon::loader::Elf::from_file(Path::new(filename))?;
+
+    match elf.architecture().name() {
+        "amd64" =>
+            run2(
+                platform::linux::Amd64::standard_load(filename, base_path)?,
+                &matches),
+        "mips" =>
+            run2(
+                platform::linux::Mips::standard_load(filename, base_path)?,
+                &matches),
+        _ => bail!("Unhandled architecture: {}", elf.architecture().name())
     }
-    else if let Some(debugger_script) = matches.value_of("debugger_script") {
-        let driver = platform::linux::Mips::standard_load(filename, base_path)?;
-        let debugger = debugger::Debugger::new(vec![driver]);
-        let mut interpreter = interpreter::Interpreter::new(debugger);
-        interpreter.script(Path::new(debugger_script))
-    }
-    else {
-        quick(filename, base_path)
-    }
+
+
 }
 
 
 fn main() {
-    match run() {
-        Ok(_) => {},
-        Err(e) => {
-            eprintln!("error: {}", e);
-            for e in e.iter().skip(1) {
-                eprintln!("caused by: {}", e);
-            }
-            if let Some(backtrace) = e.backtrace() {
-                eprintln!("backtrace: {:?}", backtrace);
-            }
-        }
-    }
+    run().unwrap();
+    // match run() {
+    //     Ok(_) => {},
+    //     Err(e) => {
+    //         eprintln!("error: {}", e);
+    //         for e in e.iter().skip(1) {
+    //             eprintln!("caused by: {}", e);
+    //         }
+    //         if let Some(backtrace) = e.backtrace() {
+    //             eprintln!("backtrace: {:?}", backtrace);
+    //         }
+    //     }
+    // }
 }

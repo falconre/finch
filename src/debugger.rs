@@ -1,5 +1,5 @@
 use error::*;
-use executor::Driver;
+use finch::executor::Driver;
 use platform::Platform;
 use std::collections::HashMap;
 
@@ -154,10 +154,8 @@ impl<P: Platform<P>> Debugger<P> {
 
         let mut last_step_drivers_len = drivers.len();
         
-        for i in 0..steps {
-            if steps < 10000 {
-                debug!("step: {}", i);
-            }
+        for _i in 0..steps {
+            if drivers.len() == 0 { break; }
 
             let temp_drivers = 
                 bin_drivers(drivers,

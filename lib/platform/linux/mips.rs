@@ -12,6 +12,7 @@ use std::path::PathBuf;
 
 // const ARGV_STRING_LEN: u64 = 256;
 const TLS_ADDRESS: u64 = 0xc000_0000;
+const STACK_BASE: u64 = 0xbff0_0000;
 
 const DEFAULT_PID: u64 = 512;
 
@@ -113,7 +114,7 @@ impl Mips {
         };
         let backing = elf_linker.memory()?;
         let memory = Memory::new_with_backing(endian, RC::new(backing));
-        let state = State::new(memory, Some(Box::new(mips_linux)));
+        let state = State::new(memory, Box::new(mips_linux));
 
         let state = Mips::initialize(state, &elf_linker)?;
 
@@ -128,8 +129,6 @@ impl Mips {
 
     fn initialize(mut state: State<Mips>, elf_linker: &ElfLinker)
         -> Result<State<Mips>> {
-
-        let stack_base: u64 = 0xbff00000;
 
         let environment = Environment::new()
             .command_line_argument(
@@ -150,7 +149,7 @@ impl Mips {
 
         environment.initialize_process32(
             &mut state.memory_mut(),
-            stack_base,
+            STACK_BASE,
             elf_linker)?;
 
         for i in 0..0x8000 {
@@ -159,12 +158,12 @@ impl Mips {
 
         // Writing to create some stack space, which is good for qemu
         for i in 1..0x10000 {
-            state.memory_mut().store(stack_base - i, &il::expr_const(0, 8))?;
+            state.memory_mut().store(STACK_BASE - i, &il::expr_const(0, 8))?;
         }
 
         state.set_scalar("$ra", &il::expr_const(0, 32))?;
         state.set_scalar("$v0", &il::expr_const(0, 32))?;
-        state.set_scalar("$sp", &il::expr_const(0xbff00000, 32))?;
+        state.set_scalar("$sp", &il::expr_const(STACK_BASE, 32))?;
         state.set_scalar("$s0", &il::expr_const(0, 32))?;
         state.set_scalar("$s1", &il::expr_const(0, 32))?;
         state.set_scalar("$s2", &il::expr_const(0, 32))?;
@@ -287,7 +286,6 @@ impl Mips {
 
                 let result =
                     state.platform()
-                        .unwrap()
                         .linux
                         .access(&filename, a1);
 
@@ -305,7 +303,7 @@ impl Mips {
             SYSCALL_BRK => {
                 let a0 = state.eval_and_concretize(&il::expr_scalar("$a0", 32))?
                     .ok_or("Failed to get $a0 for brk systemcall")?;
-                let a0 = state.platform_mut().unwrap().linux.brk(a0.value_u64().unwrap());
+                let a0 = state.platform_mut().linux.brk(a0.value_u64().unwrap());
                 state.set_scalar("$v0", &il::expr_const(a0, 32))?;
                 state.set_scalar("$a3", &il::expr_const(0, 32))?;
                 Ok(vec![Successor::new(state, SuccessorType::FallThrough)])
@@ -313,7 +311,6 @@ impl Mips {
             SYSCALL_CLOSE => {
                 let a0 = Mips::get_register(&mut state, "$a0")?;
                 if state.platform_mut()
-                        .unwrap()
                         .linux
                         .file_system_mut()
                         .close_fd(a0 as usize) {
@@ -339,13 +336,12 @@ impl Mips {
                 let a1 = Mips::get_register(&mut state, "$a1")?;
 
                 match state.platform()
-                           .unwrap()
                            .linux
                            .file_system()
                            .size_fd(a0 as usize) {
                     Some(size) => {
                         let buf =
-                            state.platform_mut().unwrap().fake_stat64(size)?;
+                            state.platform_mut().fake_stat64(size)?;
                         for i in 0..buf.len() {
                             state.memory_mut().store(
                                 a1 + i as u64,
@@ -400,7 +396,6 @@ impl Mips {
 
                 let result =
                     state.platform_mut()
-                        .unwrap()
                         .linux
                         .lseek(a0, (a1 as i32) as isize, a2)?;
 
@@ -425,18 +420,8 @@ impl Mips {
                 let address =
                     state.platform
                         .as_mut()
-                        .unwrap()
                         .linux
                         .mmap(&mut state.memory, a0, a1, a2, a3, stack0, stack1)?;
-
-                // *state.memory_mut() = *memory;
-                // let address =
-                //     state.platform_mut()
-                //         .unwrap()
-                //         .linux
-                //         .mmap(memory, a0, a1, a2, a3, stack0, stack1)?;
-
-                // *state.memory_mut() = *memory;
 
                 state.set_scalar("$v0", &il::expr_const(address as u64, 32))?;
                 state.set_scalar("$a3", &il::expr_const(0, 32))?;
@@ -454,7 +439,6 @@ impl Mips {
                 let result =
                     state.platform
                         .as_mut()
-                        .unwrap()
                         .linux
                         .mprotect(&mut state.memory, a0, a1, a2)?;
 
@@ -484,7 +468,6 @@ impl Mips {
 
                 let result =
                     state.platform_mut()
-                        .unwrap()
                         .linux
                         .open(&filename, a1, a2)?;
 
@@ -516,7 +499,6 @@ impl Mips {
 
                 let result =
                     state.platform_mut()
-                        .unwrap()
                         .linux
                         .read(a0, a2)?;
 
@@ -615,15 +597,6 @@ impl Mips {
                 Ok(vec![Successor::new(state, SuccessorType::FallThrough)])
             },
             SYSCALL_UNAME => {
-                /*
-                    struct utsname {
-                        char sysname[65];
-                        char nodename[65];
-                        char release[65];
-                        char version[65];
-                        char machine[65];
-                    }
-                */
                 trace!("uname");
                 // Just zero everything out
                 let a0 = state.eval_and_concretize(&il::expr_scalar("$a0", 32))?
@@ -693,7 +666,6 @@ impl Mips {
                 };
 
                 let result = state.platform_mut()
-                    .unwrap()
                     .linux
                     .write(a0, bytes)?;
 

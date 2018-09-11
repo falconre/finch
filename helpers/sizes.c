@@ -1,5 +1,3 @@
-cat > /tmp/test.c <<EOF
-
 #define __USE_LARGEFILE64
 #define _LARGEFILE_SOURCE
 #define _LARGEFILE64_SOURCE
@@ -57,5 +55,3 @@ int main() {
 
     return 0;
 }
-EOF
-gcc /tmp/test.c -o /tmp/test && qemu-mipsel -L /usr/mipsel-linux-gnu /tmp/test

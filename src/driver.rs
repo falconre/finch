@@ -1,5 +1,5 @@
 use error::*;
-use executor::{Driver, State, Memory};
+use finch::executor::{Driver, State, Memory};
 use platform::Platform;
 
 
@@ -88,7 +88,7 @@ pub fn merge_drivers<P: Platform<P>>(drivers: Vec<Driver<P>>)
         let memory = Memory::new(driver.state().memory().endian());
         let sum = State::new(
             memory,
-            drivers[0].state().platform().map(|d| d.box_clone())
+            drivers[0].state().platform().box_clone()
         );
         let state = drivers.into_iter().fold(sum, |sum, driver|
             sum.merge(driver.state()).unwrap());
