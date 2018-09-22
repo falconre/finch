@@ -149,7 +149,7 @@ impl Amd64 {
                 EnvironmentString::new_concrete(
                     "LOCALDOMAIN=localdomain"));
 
-        environment.initialize_process32(
+        environment.initialize_process64(
             &mut state.memory_mut(),
             STACK_BASE,
             elf_linker)?;
@@ -162,6 +162,14 @@ impl Amd64 {
         for i in 1..0x10000 {
             state.memory_mut().store(STACK_BASE - i, &il::expr_const(0, 8))?;
         }
+
+        state.set_scalar("DF", &il::expr_const(0, 1))?;
+        state.set_scalar("CF", &il::expr_const(0, 1))?;
+        state.set_scalar("PF", &il::expr_const(0, 1))?;
+        state.set_scalar("AF", &il::expr_const(0, 1))?;
+        state.set_scalar("ZF", &il::expr_const(0, 1))?;
+        state.set_scalar("SF", &il::expr_const(0, 1))?;
+        state.set_scalar("OF", &il::expr_const(0, 1))?;
 
         state.set_scalar("rax", &il::expr_const(0, 64))?;
         state.set_scalar("rbx", &il::expr_const(0, 64))?;
@@ -185,11 +193,41 @@ impl Amd64 {
 
 
     /// Handle an intrinsic instruction.
-    pub fn intrinsic(state: State<Amd64>, intrinsic: &il::Intrinsic)
+    pub fn intrinsic(mut state: State<Amd64>, intrinsic: &il::Intrinsic)
         -> Result<Vec<Successor<Amd64>>> {
 
         if intrinsic.mnemonic() == "syscall" {
             Amd64::syscall(state)
+        }
+        else if intrinsic.mnemonic() == "cpuid" {
+            let rax = state.eval_and_concretize(&il::expr_scalar("rax", 64))?
+                .and_then(|constant| constant.value_u64())
+                .ok_or("Failed to get syscall num in rax")?;
+
+            match rax {
+                0 => {
+                    state.set_scalar("rax", &il::expr_const(0, 64))?;
+                    state.set_scalar("rbx", &il::expr_const(0x756e6547, 64))?;
+                    state.set_scalar("rcx", &il::expr_const(0x6c65746e, 64))?;
+                    state.set_scalar("rdx", &il::expr_const(0x49656e69, 64))?;
+                },
+                1 => {
+                    // this says essentially that the cpu supports nothing.
+                    state.set_scalar("rax", &il::expr_const(0b0000_00000000_0000_00_00_0000_0000_0000, 64))?;
+                    state.set_scalar("rbx", &il::expr_const(0b00000000_00000001_00000001_00000000, 64))?;
+                    state.set_scalar("rcx", &il::expr_const(0, 64))?;
+                    state.set_scalar("rdx", &il::expr_const(0, 64))?;
+                }
+                _ => {
+                    bail!("Unhandled cpuid rax={}", rax)
+                }
+            };
+            Ok(vec![Successor::new(state, SuccessorType::FallThrough)])
+        }
+        else if intrinsic.mnemonic() == "rdtsc" {
+            state.set_scalar("rax", &il::expr_scalar("rdtsc-rax", 64))?;
+            state.set_scalar("rdx", &il::expr_scalar("rdtsc-rdx", 64))?;
+            Ok(vec![Successor::new(state, SuccessorType::FallThrough)])
         }
         else {
             Err(ErrorKind::UnhandledIntrinsic(format!("{}", intrinsic)).into())
@@ -254,7 +292,7 @@ impl Amd64 {
     pub fn syscall(mut state: State<Amd64>)
         -> Result<Vec<Successor<Amd64>>> {
 
-        let syscall_num = state.eval_and_concretize(&il::expr_scalar("rax", 32))?
+        let syscall_num = state.eval_and_concretize(&il::expr_scalar("rax", 64))?
             .ok_or("Failed to get syscall num in rax")?;
 
         println!("syscall_num is {}", syscall_num);

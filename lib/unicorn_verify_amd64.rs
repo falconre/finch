@@ -17,14 +17,22 @@ struct RegisterMapping {
 
 
 const REGISTER_MAPPINGS: &[RegisterMapping] = &[
-    RegisterMapping { register: unicorn::RegisterX86::EAX, name: "eax" },
-    RegisterMapping { register: unicorn::RegisterX86::EBX, name: "ebx" },
-    RegisterMapping { register: unicorn::RegisterX86::ECX, name: "ecx" },
-    RegisterMapping { register: unicorn::RegisterX86::EDX, name: "edx" },
-    RegisterMapping { register: unicorn::RegisterX86::EDI, name: "edi" },
-    RegisterMapping { register: unicorn::RegisterX86::ESI, name: "esi" },
-    RegisterMapping { register: unicorn::RegisterX86::EBP, name: "ebp" },
-    RegisterMapping { register: unicorn::RegisterX86::ESP, name: "esp" },
+    RegisterMapping { register: unicorn::RegisterX86::RAX, name: "rax" },
+    RegisterMapping { register: unicorn::RegisterX86::RBX, name: "rbx" },
+    RegisterMapping { register: unicorn::RegisterX86::RCX, name: "rcx" },
+    RegisterMapping { register: unicorn::RegisterX86::RDX, name: "rdx" },
+    RegisterMapping { register: unicorn::RegisterX86::RDI, name: "rdi" },
+    RegisterMapping { register: unicorn::RegisterX86::RSI, name: "rsi" },
+    RegisterMapping { register: unicorn::RegisterX86::R8, name: "r8" },
+    RegisterMapping { register: unicorn::RegisterX86::R9, name: "r9" },
+    RegisterMapping { register: unicorn::RegisterX86::R10, name: "r10" },
+    RegisterMapping { register: unicorn::RegisterX86::R11, name: "r11" },
+    RegisterMapping { register: unicorn::RegisterX86::R12, name: "r12" },
+    RegisterMapping { register: unicorn::RegisterX86::R13, name: "r13" },
+    RegisterMapping { register: unicorn::RegisterX86::R14, name: "r14" },
+    RegisterMapping { register: unicorn::RegisterX86::R15, name: "r15" },
+    RegisterMapping { register: unicorn::RegisterX86::RBP, name: "rbp" },
+    RegisterMapping { register: unicorn::RegisterX86::RSP, name: "rsp" }
 ];
 
 
@@ -32,7 +40,7 @@ fn make_emu<P: Platform<P>>(mut driver: Driver<P>)
     -> Result<(Driver<P>, CpuX86)> {
 
     // create the emu emulator
-    let mode = unicorn::Mode::MODE_32 as i32;
+    let mode = unicorn::Mode::MODE_64 as i32;
     let mode = unsafe { ::std::mem::transmute::<i32, unicorn::Mode>(mode) };
     let emu = CpuX86::new(mode)
         .expect("Failed to initialize unicorn engine");
@@ -151,7 +159,7 @@ fn make_emu<P: Platform<P>>(mut driver: Driver<P>)
     for register_mapping in REGISTER_MAPPINGS {
         let value =
             state.eval_and_concretize(
-                &il::expr_scalar(register_mapping.name, 32))?;
+                &il::expr_scalar(register_mapping.name, 64))?;
         match value {
             Some(value) =>
                 emu.reg_write(register_mapping.register.clone(),
@@ -165,7 +173,7 @@ fn make_emu<P: Platform<P>>(mut driver: Driver<P>)
 
     // including the pc register
     emu.reg_write(
-        unicorn::RegisterX86::EIP,
+        unicorn::RegisterX86::RIP,
         driver.instruction()
             .expect("Failed to get instruction to start unicorn stepping")
             .address()
@@ -180,7 +188,7 @@ fn make_emu<P: Platform<P>>(mut driver: Driver<P>)
 
 
 fn panic_step(emu: &mut CpuX86, steps: usize) {
-    let pc = emu.reg_read(unicorn::RegisterX86::EIP)
+    let pc = emu.reg_read(unicorn::RegisterX86::RIP)
         .expect("Failed to get PC register");
 
     println!("panic_step: 0x{:08x}", pc);
@@ -203,22 +211,46 @@ pub fn step_with_unicorn<P: Platform<P>>(driver: Driver<P>, steps: usize)
     for step in 0..steps {
         panic_step(&mut emu, 1);
 
+        // if driver.address().unwrap_or(0) == 0x4001a6c5 {
+        //     let driver = driver.step()?.pop().unwrap();
+        //     panic!("{}", driver.state().scalar("temp_0.0").unwrap());
+        // }
+
+        let mut step_over = false;
+        if let Some(instruction) = driver.instruction() {
+            match instruction.operation() {
+                il::Operation::Intrinsic { intrinsic } => {
+                    if intrinsic.mnemonic() == "cpuid" {
+                        step_over = true;
+                    }
+                }
+                _ => {}
+            }
+        }
+
+        if step_over {
+            let mut drivers = driver.step()?;
+            driver = drivers.pop().unwrap();
+            let (d, e) = make_emu(driver)?;
+            driver = d;
+            emu = e;
+            continue;
+        }
+
         // get the new pc
-        let pc = emu.reg_read(unicorn::RegisterX86::EIP)
+        let pc = emu.reg_read(unicorn::RegisterX86::RIP)
             .expect("Failed to get PC register");
         println!("pc=0x{:08x}, step={}", pc, step);
 
         // step the driver until it hits this address
-        for _ in 0..16 {
+        for _ in 0..32 {
             let mut drivers = driver.step()?;
             if drivers.len() != 1 {
                 bail!("Drivers len != 1");
             }
             driver = drivers.pop().unwrap();
 
-            if let Some(address) = driver.address() {
-                println!("driver address = 0x{:x}", address);
-            }
+            println!("{}", driver.location().apply(driver.program())?);
 
             if let Some(instruction) = driver.instruction() {
                 match instruction.operation() {

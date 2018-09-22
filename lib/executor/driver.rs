@@ -2,18 +2,19 @@
 
 use falcon::architecture::Architecture;
 use error::*;
-use executor::{State, StateTranslator};
+use executor::{State, StateTranslator, Trace};
 use executor::successor::*;
 use falcon::{il, RC};
 use platform::Platform;
 
 /// A `Driver` to driver `State` over an `il::Program`.
-#[derive(Debug)]
+#[derive(Clone, Debug)]
 pub struct Driver<P: Platform<P>> {
     program: il::Program,
     location: il::ProgramLocation,
     state: State<P>,
-    architecture: RC<Box<Architecture>>
+    architecture: RC<Box<Architecture>>,
+    trace: Trace
 }
 
 
@@ -29,13 +30,67 @@ impl<P: Platform<P>> Driver<P> {
             program: program,
             location: location,
             state: state,
-            architecture: architecture
+            architecture: architecture,
+            trace: Trace::new()
+        }
+    }
+
+    fn new_full(
+        program: il::Program,
+        location: il::ProgramLocation,
+        state: State<P>,
+        architecture: RC<Box<Architecture>>,
+        trace: Trace
+    ) -> Driver<P> {
+        Driver {
+            program: program,
+            location: location,
+            state: state,
+            architecture: architecture,
+            trace: trace
         }
     }
 
     /// Step the underlying `State` forward over this `Driver`'s `il::Program`.
-    pub fn step(self) -> Result<Vec<Driver<P>>> {
+    pub fn step(mut self) -> Result<Vec<Driver<P>>> {
+        // Go ahead and set the trace location
+        let index = {
+            let location = self.location.apply(&self.program()).unwrap();
+
+            let index: Option<il::Expression> = 
+                if let Some(operation) = location.instruction().map(|i| i.operation()) {
+                    match operation {
+                        il::Operation::Load { index, .. } |
+                        il::Operation::Store { index, .. } => Some(index.clone()),
+                        il::Operation::Assign { .. } |
+                        il::Operation::Branch { .. } |
+                        il::Operation::Intrinsic { .. } |
+                        il::Operation::Nop => None
+                    }
+                } else { None };
+
+            index
+        };
+
+        let address = match index {
+            Some(index) => {
+                let address = self.state
+                    .eval_and_concretize(&index)?
+                    .ok_or("Failed to concretize address while running trace")?;
+                let address =
+                    address.value_u64()
+                        .ok_or("value_u64 failed on address for trace")?;
+                Some(address)
+            },
+            None => None
+        };
+
+        let program_location = self.location.clone();
+
+        self.trace.push(program_location, address);
+
         let location = self.location.apply(&self.program).unwrap();
+
         let mut drivers = Vec::new();
         match *location.function_location() {
             il::RefFunctionLocation::Instruction(_, instruction) => {
@@ -63,11 +118,12 @@ impl<P: Platform<P>> Driver<P> {
                             }
 
                             if locations.len() == 1 {
-                                drivers.push(Driver::new(
+                                drivers.push(Driver::new_full(
                                     self.program.clone(),
                                     locations[0].clone().into(),
                                     successor.into(),
-                                    self.architecture.clone()
+                                    self.architecture.clone(),
+                                    self.trace.clone()
                                 ));
                             }
                             else {
@@ -81,11 +137,12 @@ impl<P: Platform<P>> Driver<P> {
                                     if !constraint.all_constants() {
                                         state.add_path_constraint(&constraint)?;
                                     }
-                                    drivers.push(Driver::new(
+                                    drivers.push(Driver::new_full(
                                         self.program.clone(),
                                         location.clone().into(),
                                         state,
-                                        self.architecture.clone()
+                                        self.architecture.clone(),
+                                        self.trace.clone()
                                     ));
                                 }
                             }
@@ -93,11 +150,12 @@ impl<P: Platform<P>> Driver<P> {
                         SuccessorType::Branch(address) => {
                             match il::RefProgramLocation::from_address(&self.program, address) {
                                 Some(location) => {
-                                    drivers.push(Driver::new(
+                                    drivers.push(Driver::new_full(
                                     self.program.clone(),
                                     location.into(),
                                     successor.into(),
-                                    self.architecture.clone()))
+                                    self.architecture.clone(),
+                                    self.trace.clone()))
                                 },
                                 None => {
                                     let state: State<P> = successor.into();
@@ -113,11 +171,12 @@ impl<P: Platform<P>> Driver<P> {
                                         address
                                     )
                                     .expect(&format!("Unable to get program location for address 0x{:x}", address));
-                                    drivers.push(Driver::new(
+                                    drivers.push(Driver::new_full(
                                         program.clone(),
                                         location.into(),
                                         state_translator.into(),
-                                        self.architecture.clone()
+                                        self.architecture.clone(),
+                                        self.trace.clone()
                                     ));
                                 }
                             }
@@ -130,11 +189,12 @@ impl<P: Platform<P>> Driver<P> {
             },
             il::RefFunctionLocation::Edge(_) => {
                 let locations = location.forward()?;
-                drivers.push(Driver::new(
+                drivers.push(Driver::new_full(
                     self.program.clone(),
                     locations[0].clone().into(),
                     self.state,
-                    self.architecture
+                    self.architecture,
+                    self.trace
                 ));
             },
             il::RefFunctionLocation::EmptyBlock(_) => {
@@ -157,11 +217,12 @@ impl<P: Platform<P>> Driver<P> {
                 }
 
                 if locations.len() == 1 {
-                    drivers.push(Driver::new(
+                    drivers.push(Driver::new_full(
                         self.program.clone(),
                         locations[0].clone().into(),
                         self.state,
-                        self.architecture.clone()
+                        self.architecture.clone(),
+                        self.trace
                     ));
                 }
                 else {
@@ -171,11 +232,12 @@ impl<P: Platform<P>> Driver<P> {
                                    .symbolize_and_eval(&edge.condition().clone().unwrap())?
                                    .map(|constant| constant.is_one())
                                    .unwrap_or(false) {
-                                drivers.push(Driver::new(
+                                drivers.push(Driver::new_full(
                                     self.program.clone(),
                                     location.clone().into(),
                                     self.state.clone(),
-                                    self.architecture.clone()
+                                    self.architecture.clone(),
+                                    self.trace.clone()
                                 ));
                             }
                         }
@@ -218,7 +280,7 @@ impl<P: Platform<P>> Driver<P> {
 
     /// Retrieve the address of the instruction this driver is currently on
     pub fn address(&self) -> Option<u64> {
-        self.location.apply(&self.program).and_then(|rpl| rpl.address())
+        self.location.apply(&self.program).ok().and_then(|rpl| rpl.address())
     }
 
     /// Retrieve the instruction for this driver, if this driver is currently
@@ -226,6 +288,7 @@ impl<P: Platform<P>> Driver<P> {
     pub fn instruction(&self) -> Option<il::Instruction> {
         self.location
             .apply(&self.program)
+            .ok()
             .and_then(|rpl| rpl.instruction().cloned())
     }
 
@@ -237,6 +300,11 @@ impl<P: Platform<P>> Driver<P> {
     /// Retrieve a mutable reference to the `State`.
     pub fn state_mut(&mut self) -> &mut State<P> {
         &mut self.state
+    }
+
+    /// Get a trace of instructions executed by this driver
+    pub fn trace(&self) -> &Trace {
+        &self.trace
     }
 
     /// Merge two drivers together, if they are at the same program location
@@ -262,13 +330,13 @@ impl<P: Platform<P>> Into<State<P>> for Driver<P> {
 }
 
 
-impl<P: Platform<P>> Clone for Driver<P> {
-    fn clone(&self) -> Driver<P> {
-        Driver {
-            program: self.program.clone(),
-            location: self.location.clone(),
-            state: self.state.clone(),
-            architecture: self.architecture.clone()
-        }
-    }
-}
+// impl<P: Platform<P>> Clone for Driver<P> {
+//     fn clone(&self) -> Driver<P> {
+//         Driver {
+//             program: self.program.clone(),
+//             location: self.location.clone(),
+//             state: self.state.clone(),
+//             architecture: self.architecture.clone()
+//         }
+//     }
+// }

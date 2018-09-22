@@ -15,6 +15,7 @@ mod memory;
 mod state_translator;
 mod successor;
 mod symbolic_string;
+mod trace;
 
 pub use self::state::*;
 pub use self::driver::*;
@@ -23,6 +24,7 @@ pub use self::memory::*;
 pub use self::state_translator::*;
 pub use self::successor::*;
 pub(crate) use self::symbolic_string::*;
+pub use self::trace::*;
 
 
 #[derive(Clone, Debug)]

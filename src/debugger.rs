@@ -155,7 +155,6 @@ impl<P: Platform<P>> Debugger<P> {
         let mut last_step_drivers_len = drivers.len();
         
         for _i in 0..steps {
-            if drivers.len() == 0 { break; }
 
             let temp_drivers = 
                 bin_drivers(drivers,
@@ -187,6 +186,46 @@ impl<P: Platform<P>> Debugger<P> {
                 Ok(drivers) => drivers,
                 Err(e) => return Err(e)
             };
+
+            let address = drivers.get(0).unwrap().address().unwrap_or(0);
+
+            // if _i == 1645 {
+            if address == 0x4000b343 {
+                use falcon::il;
+                let driver = drivers.get(0).unwrap();
+                let trace = driver.trace();
+                let sliced_trace =
+                    trace.slice_backwards(
+                        &il::scalar("r14", 64), driver.program())?;
+
+                for trace_item in sliced_trace.items() {
+                    let location =
+                        trace_item.program_location()
+                            .apply(driver.program())?;
+                    println!("{}", location);
+                }
+                println!("Trace is {} items", driver.trace().items().len());
+                println!("Sliced trace is {} items", sliced_trace.items().len());
+                println!("r14: {}", driver.state().scalar("r14").unwrap());
+                println!("{}", driver.instruction().unwrap());
+                // panic!("11213");
+            }
+
+            if let Some(driver) = drivers.get(0) {
+                println!("{}", driver.location().apply(driver.program())?);
+                // use falcon::il;
+                // if let Some(instruction) = driver.instruction() {
+                //     match instruction.operation() {
+                //         il::Operation::Branch { target } => {
+                //             let target = driver.state().clone().eval_and_concretize(target)?.unwrap();
+                //             let target = target.value_u64().unwrap();
+                //             let target = target + 0x4000a03000 - 0x40000000;
+                //             println!("b *0x{:x}", target);
+                //         },
+                //         _ => {}
+                //     }
+                // }
+            }
 
             if drivers.len() > last_step_drivers_len {
                 debug!("Had {} drivers, now have {} drivers",

@@ -58,7 +58,12 @@ fn run2<P: Platform<P>>(driver: Driver<P>, matches: &clap::ArgMatches)
         interpreter.script(Path::new(debugger_script))
     }
     else {
-        bail!("Require option debugger or debugger_script")
+        let driver =
+            driver::drive_to_address(driver, 0xdeadbeef, 1)?
+                .get(0)
+                .unwrap()
+                .clone();
+        Ok(finch::unicorn_verify_amd64::step_with_unicorn(driver, 10000)?)
     }
 }
 

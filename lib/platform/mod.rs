@@ -9,7 +9,7 @@ pub mod linux;
 
 
 /// Functionality required by all Platforms
-pub trait Platform<P: Platform<P>>: Debug {
+pub trait Platform<P: Platform<P>>: Clone + Debug {
     /// Execute an intrinsic instruction
     fn intrinsic(state: State<P>, intrinsic: &il::Intrinsic)
         -> Result<Vec<Successor<P>>>;
