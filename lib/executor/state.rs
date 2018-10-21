@@ -297,6 +297,13 @@ impl<P: Platform<P>> State<P> {
     -> Result<Option<il::Constant>> {
         let expression = self.symbolize_expression(expression)?;
 
+        self.eval(&expression)
+    }
+
+
+    /// Evaluates the expression to a single, concrete value
+    pub fn eval(&self, expression: &il::Expression)
+    -> Result<Option<il::Constant>> {
         if expression.all_constants() {
             Ok(Some(eval(&expression)?))
         }
