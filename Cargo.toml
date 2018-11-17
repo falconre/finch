@@ -11,9 +11,9 @@ readme = "README.md"
 byteorder = "1.2"
 clap = "2.26"
 error-chain = "0.12"
-falcon = "0.4.3"
+falcon = "0.4.4"
 falcon_capstone = "0.2.1"
-falcon-z3 = "0.4.3"
+falcon-z3 = "0.4.4"
 goblin = "0.0.15"
 lazy_static = "1.0"
 log = "0.4"
@@ -23,7 +23,7 @@ rustyline = "1.0.0"
 serde = "1.0"
 serde_derive = "1.0"
 simplelog = "0.5"
-unicorn = { git="https://github.com/endeav0r/unicorn-rs" }
+#unicorn = { git="https://github.com/endeav0r/unicorn-rs" }
 
 [lib]
 name = "finch"
