@@ -8,12 +8,12 @@ extern crate goblin;
 #[macro_use] extern crate lazy_static;
 #[macro_use] extern crate log;
 #[macro_use] extern crate serde_derive;
-extern crate unicorn;
+// extern crate unicorn;
 
 
 pub mod executor;
 pub mod platform;
-pub mod unicorn_verify_amd64;
+// pub mod unicorn_verify_amd64;
 // pub mod unicorn_verify_mips;
 // pub mod unicorn_verify_x86;
 
