@@ -90,76 +90,162 @@ impl translator::TranslationMemory for SymbolicMemory {
 }
 
 
-pub fn expression_complexity(expression: &il::Expression) -> usize {
-    match expression {
-        il::Expression::Scalar(_) |
-        il::Expression::Constant(_) => 0,
-        il::Expression::Add(lhs, rhs) |
-        il::Expression::Sub(lhs, rhs) |
-        il::Expression::Mul(lhs, rhs) |
-        il::Expression::Divu(lhs, rhs) |
-        il::Expression::Modu(lhs, rhs) |
-        il::Expression::Divs(lhs, rhs) |
-        il::Expression::Mods(lhs, rhs) |
-        il::Expression::And(lhs, rhs) |
-        il::Expression::Or(lhs, rhs) |
-        il::Expression::Xor(lhs, rhs) |
-        il::Expression::Shl(lhs, rhs) |
-        il::Expression::Shr(lhs, rhs) |
-        il::Expression::Cmpeq(lhs, rhs) |
-        il::Expression::Cmpneq(lhs, rhs) |
-        il::Expression::Cmplts(lhs, rhs) |
-        il::Expression::Cmpltu(lhs, rhs) =>
-            1 + expression_complexity(lhs) + expression_complexity(rhs),
-        il::Expression::Trun(_, rhs) |
-        il::Expression::Sext(_, rhs) |
-        il::Expression::Zext(_, rhs) => 1 + expression_complexity(rhs),
-        il::Expression::Ite(cond, then, else_) =>
-            1 + 
-            expression_complexity(cond) + 
-            expression_complexity(then) + 
-            expression_complexity(else_)
-    }
-}
-
-
 
 pub fn simplify(expression: &il::Expression) -> Result<il::Expression> {
+
+    // We have reached an optimization that allows us to safely eliminate lower
+    // bits in some circumstances. For example (0xFFFFFF00:32 & zext.32(e:8))
+    // can be simplified to 0:32
+    fn eliminate_lower_bits(bits: usize, e: il::Expression) -> Result<il::Expression> {
+        fn zext_eliminate(bits: usize, e: il::Expression) -> il::Expression {
+            let e_bits = e.bits();
+            match e {
+                il::Expression::Zext(_, ref ze) =>
+                    if ze.bits() <= bits {
+                        return il::expr_const(0, e_bits);
+                    }
+                _ => {}
+            };
+            e
+        }
+
+        match e {
+            il::Expression::Or(lhs, rhs) => {
+                let lhs = zext_eliminate(bits, *lhs);
+                let rhs = zext_eliminate(bits, *rhs);
+                Ok(il::Expression::or(lhs.clone(), rhs.clone())?)
+            },
+            _ => Ok(e.clone())
+        }
+    }
+
+    // We have reached an optimization that allows us to safely eliminate upper
+    // bits in some circumstances. For example trun.8(0xFFFFFF00:32 | e:32) can be
+    // simplified to trun.8(e:32)
+    fn eliminate_upper_bits(bits: usize, e: il::Expression) -> Result<il::Expression> {
+        // Returns true if this side of an or statement can be safely eliminated
+        fn or_eliminate(bits: usize, e: &il::Expression) -> bool {
+            let mask: u64 = (1 << (bits as u64)) - 1;
+
+            match e {
+                il::Expression::Constant(c) =>
+                    c.value_u64().map(|v| v & mask == 0).unwrap_or(false),
+                _ => false
+            }
+        }
+
+        Ok(match e {
+            il::Expression::Or(lhs, rhs) => {
+                if or_eliminate(bits, &lhs) {
+                    *rhs
+                }
+                else if or_eliminate(bits, &rhs) {
+                    *lhs
+                }
+                else {
+                    il::Expression::or(*lhs, *rhs)?
+                }
+            },
+            _ => e
+        })
+    }
+
+    fn simplify_and(lhs: &il::Expression, rhs: &il::Expression)
+        -> Result<il::Expression> {
+
+
+        let lhs = simplify(lhs)?;
+        let rhs = simplify(rhs)?;
+
+        fn and_bitmask(expression: &il::Expression) -> usize {
+            match expression {
+                il::Expression::Constant(c) => {
+                    if let Some(v) = c.value_u64() {
+                        v.trailing_zeros() as usize
+                    }
+                    else {
+                        0
+                    }
+                },
+                _ => 0
+            }
+        }
+
+        let lhs_bitmask = and_bitmask(&lhs);
+        let rhs_bitmask = and_bitmask(&rhs);
+
+        Ok(if lhs_bitmask > 0 {
+            eliminate_lower_bits(lhs_bitmask, rhs)?
+        }
+        else if rhs_bitmask > 0 {
+            eliminate_lower_bits(rhs_bitmask, lhs)?
+        }
+        else {
+            il::Expression::and(lhs, rhs)?
+        })
+    }
+
+    fn simplify_or(lhs: &il::Expression, rhs: &il::Expression)
+        -> Result<il::Expression> {
+
+        let lhs = simplify(lhs)?;
+        let rhs = simplify(rhs)?;
+
+        Ok(if lhs.get_constant().map(|c| c.is_zero()).unwrap_or(false) {
+            rhs
+        }
+        else if rhs.get_constant().map(|c| c.is_zero()).unwrap_or(false) {
+            lhs
+        }
+        else {
+            il::Expression::or(lhs, rhs)?
+        })
+    }
 
     fn simplify_zext(bits: usize, expression: &il::Expression)
         -> Result<il::Expression> {
 
+        let expression = simplify(expression)?;
+
         // Get rid of nested zext(zext())
         match expression {
             il::Expression::Zext(_, expression) =>
-                return Ok(il::Expression::zext(bits, simplify(expression)?)?),
+                return Ok(il::Expression::zext(bits, *expression)?),
             _ => {}
         };
 
-        Ok(il::Expression::zext(bits, simplify(expression)?)?)
+        Ok(il::Expression::zext(bits, expression)?)
     }
 
     fn simplify_trun(bits: usize, expression: &il::Expression)
         -> Result<il::Expression> {
 
+        let expression = simplify(expression)?;
+        let expression = eliminate_upper_bits(bits, expression)?;
+
         // Get rid of nested trun(zext()) patterns
         match expression {
-            il::Expression::Zext(_, expression) =>
+            il::Expression::Zext(zbits, expression) => {
                 if expression.bits() == bits {
-                    return simplify(expression);
-                },
-            _ => {}
-        };
-
-        Ok(il::Expression::trun(bits, simplify(expression)?)?)
+                    Ok(*expression)
+                }
+                else {
+                    Ok(
+                        il::Expression::trun(
+                            bits,
+                            il::Expression::zext(zbits, *expression)?)?)
+                }
+            },
+            _ => Ok(il::Expression::trun(bits, expression)?)
+        }
     }
 
 
-    if expression.all_constants() {
-        Ok(eval(expression)?.into())
+    Ok(if expression.all_constants() {
+        eval(expression)?.into()
     }
     else {
-        Ok(match *expression {
+        match *expression {
             il::Expression::Scalar(_) => expression.clone(),
             il::Expression::Constant(_) => expression.clone(),
             il::Expression::Add(ref lhs, ref rhs) =>
@@ -177,9 +263,9 @@ pub fn simplify(expression: &il::Expression) -> Result<il::Expression> {
             il::Expression::Mods(ref lhs, ref rhs) =>
                 il::Expression::mods(simplify(lhs)?, simplify(rhs)?)?,
             il::Expression::And(ref lhs, ref rhs) =>
-                il::Expression::and(simplify(lhs)?, simplify(rhs)?)?,
+                simplify_and(lhs, rhs)?,
             il::Expression::Or(ref lhs, ref rhs) =>
-                il::Expression::or(simplify(lhs)?, simplify(rhs)?)?,
+                simplify_or(lhs, rhs)?,
             il::Expression::Xor(ref lhs, ref rhs) =>
                 il::Expression::xor(simplify(lhs)?, simplify(rhs)?)?,
             il::Expression::Shl(ref lhs, ref rhs) =>
@@ -202,6 +288,39 @@ pub fn simplify(expression: &il::Expression) -> Result<il::Expression> {
                 il::Expression::ite(simplify(cond)?,
                                     simplify(then)?,
                                     simplify(else_)?)?,
-        })
+        }
+    })
+}
+
+
+pub fn expression_complexity(e: &il::Expression) -> usize {
+    match e {
+        il::Expression::Scalar(_) |
+        il::Expression::Constant(_) => 1,
+        il::Expression::Add(lhs, rhs) |
+        il::Expression::Sub(lhs, rhs) |
+        il::Expression::Mul(lhs, rhs) |
+        il::Expression::Divu(lhs, rhs) |
+        il::Expression::Modu(lhs, rhs) |
+        il::Expression::Divs(lhs, rhs) |
+        il::Expression::Mods(lhs, rhs) |
+        il::Expression::And(lhs, rhs) |
+        il::Expression::Or(lhs, rhs) |
+        il::Expression::Xor(lhs, rhs) |
+        il::Expression::Shl(lhs, rhs) |
+        il::Expression::Shr(lhs, rhs) |
+        il::Expression::Cmpeq(lhs, rhs) |
+        il::Expression::Cmpneq(lhs, rhs) |
+        il::Expression::Cmplts(lhs, rhs) |
+        il::Expression::Cmpltu(lhs, rhs) =>
+            expression_complexity(lhs) + expression_complexity(rhs) + 1,
+        il::Expression::Trun(_, e) |
+        il::Expression::Zext(_, e) |
+        il::Expression::Sext(_, e) => expression_complexity(e) + 1,
+        il::Expression::Ite(cond, then, else_) =>
+            expression_complexity(cond) +
+            expression_complexity(then) +
+            expression_complexity(else_) +
+            1
     }
 }

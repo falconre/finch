@@ -12,6 +12,14 @@ lazy_static!{
         = RwLock::new(HashExpressionStore::new());
 }
 
+// hash_expression to expression_hash
+fn he2eh(hash_expression: &HashExpression) -> ExpressionHash {
+    HASH_EXPRESSION_STORE
+        .write()
+        .unwrap()
+        .get_hash_(hash_expression)
+}
+
 
 #[derive(Clone, Debug, Deserialize, Hash, Eq, Ord, PartialEq, PartialOrd, Serialize)]
 pub struct ExpressionHash(u32, u16);
@@ -123,6 +131,129 @@ impl ExpressionHash {
     pub fn trun(self, bits: usize) -> ExpressionHash {
         HASH_EXPRESSION_STORE.write().unwrap().get_hash_(
             &HashExpression::Trun(bits, self))
+    }
+
+
+    pub fn symbolize(&self, scalars: &HashMap<String, ExpressionHash>)
+        -> ExpressionHash {
+
+        fn sym(
+            expression_hash: &ExpressionHash,
+            scalars: &HashMap<String, ExpressionHash>,
+            replacers: &mut HashMap<ExpressionHash, ExpressionHash>
+        ) -> ExpressionHash {
+
+            if let Some(expression_hash) = replacers.get(expression_hash) {
+                return expression_hash.clone();
+            }
+
+            let s = scalars;
+
+            let hash_expression =
+                HASH_EXPRESSION_STORE
+                    .read()
+                    .unwrap()
+                    .get_hash_expression(expression_hash)
+                    .cloned()
+                    .expect("Failed to get hash expression");
+
+            let e: ExpressionHash = match hash_expression {
+                HashExpression::Scalar(scalar) => {
+                    match scalars.get(scalar.name()) {
+                        Some(expression_hash) => expression_hash.clone(),
+                        None => expression_hash.clone()
+                    }
+                },
+                HashExpression::Constant(_) => expression_hash.clone(),
+                HashExpression::Add(lhs, rhs) =>
+                    he2eh(&HashExpression::Add(
+                        sym(&lhs, s, replacers),
+                        sym(&rhs, s, replacers))),
+                HashExpression::Sub(lhs, rhs) =>
+                    he2eh(&HashExpression::Sub(
+                        sym(&lhs, s, replacers),
+                        sym(&rhs, s, replacers))),
+                HashExpression::Mul(lhs, rhs) =>
+                    he2eh(&HashExpression::Mul(
+                        sym(&lhs, s, replacers),
+                        sym(&rhs, s, replacers))),
+                HashExpression::Divu(lhs, rhs) =>
+                    he2eh(&HashExpression::Divu(
+                        sym(&lhs, s, replacers),
+                        sym(&rhs, s, replacers))),
+                HashExpression::Modu(lhs, rhs) =>
+                    he2eh(&HashExpression::Modu(
+                        sym(&lhs, s, replacers),
+                        sym(&rhs, s, replacers))),
+                HashExpression::Divs(lhs, rhs) =>
+                    he2eh(&HashExpression::Divs(
+                        sym(&lhs, s, replacers),
+                        sym(&rhs, s, replacers))),
+                HashExpression::Mods(lhs, rhs) =>
+                    he2eh(&HashExpression::Mods(
+                        sym(&lhs, s, replacers),
+                        sym(&rhs, s, replacers))),
+                HashExpression::And(lhs, rhs) =>
+                    he2eh(&HashExpression::And(
+                        sym(&lhs, s, replacers),
+                        sym(&rhs, s, replacers))),
+                HashExpression::Or(lhs, rhs) =>
+                    he2eh(&HashExpression::Or(
+                        sym(&lhs, s, replacers),
+                        sym(&rhs, s, replacers))),
+                HashExpression::Xor(lhs, rhs) =>
+                    he2eh(&HashExpression::Xor(
+                        sym(&lhs, s, replacers),
+                        sym(&rhs, s, replacers))),
+                HashExpression::Shl(lhs, rhs) =>
+                    he2eh(&HashExpression::Shl(
+                        sym(&lhs, s, replacers),
+                        sym(&rhs, s, replacers))),
+                HashExpression::Shr(lhs, rhs) =>
+                    he2eh(&HashExpression::Shr(
+                        sym(&lhs, s, replacers),
+                        sym(&rhs, s, replacers))),
+                HashExpression::Cmpeq(lhs, rhs) =>
+                    he2eh(&HashExpression::Cmpeq(
+                        sym(&lhs, s, replacers),
+                        sym(&rhs, s, replacers))),
+                HashExpression::Cmpneq(lhs, rhs) =>
+                    he2eh(&HashExpression::Cmpneq(
+                        sym(&lhs, s, replacers),
+                        sym(&rhs, s, replacers))),
+                HashExpression::Cmplts(lhs, rhs) =>
+                    he2eh(&HashExpression::Cmplts(
+                        sym(&lhs, s, replacers),
+                        sym(&rhs, s, replacers))),
+                HashExpression::Cmpltu(lhs, rhs) =>
+                    he2eh(&HashExpression::Cmpltu(
+                        sym(&lhs, s, replacers),
+                        sym(&rhs, s, replacers))),
+                HashExpression::Trun(bits, expression) =>
+                    he2eh(&HashExpression::Trun(
+                        bits,
+                        sym(&expression, s, replacers))),
+                HashExpression::Zext(bits, expression) =>
+                    he2eh(&HashExpression::Zext(
+                        bits,
+                        sym(&expression, s, replacers))),
+                HashExpression::Sext(bits, expression) =>
+                    he2eh(&HashExpression::Sext(
+                        bits,
+                        sym(&expression, s, replacers))),
+                HashExpression::Ite(cond, then, else_) =>
+                    he2eh(&HashExpression::Ite(
+                        sym(&cond, s, replacers),
+                        sym(&then, s, replacers),
+                        sym(&else_, s, replacers)))
+            };
+
+            // replacers.insert(expression_hash.clone(), e.clone());
+
+            e
+        }
+
+        sym(self, scalars, &mut HashMap::new())
     }
 }
 
@@ -298,6 +429,13 @@ impl HashExpressionStore {
                                     self.expression(then)?,
                                     self.expression(else_)?)?
         })
+    }
+
+
+    fn get_hash_expression(&self, expression_hash: &ExpressionHash)
+        -> Option<&HashExpression> {
+
+        self.hash_to_expr.get(expression_hash)
     }
 
 

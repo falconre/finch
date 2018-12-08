@@ -4,7 +4,7 @@ use executor::*;
 use executor::successor::*;
 use falcon_z3::il::solve;
 use platform::Platform;
-use std::collections::BTreeMap;
+use std::collections::HashMap;
 
 
 const DEFAULT_SYMBOLIC_MEMORY_ADDRESS: u64 = 0x8000_0000;
@@ -14,7 +14,7 @@ const DEFAULT_SYMBOLIC_MEMORY_ADDRESS: u64 = 0x8000_0000;
 #[derive(Debug)]
 pub struct State<P: Platform<P>> {
     /// scalar variables in this current state
-    scalars: BTreeMap<String, ExpressionHash>,
+    scalars: HashMap<String, ExpressionHash>,
     /// path constraints for this state
     path_constraints: Vec<ExpressionHash>,
     /// constraints for merged states
@@ -24,9 +24,11 @@ pub struct State<P: Platform<P>> {
     /// the platform for this state
     pub(crate) platform: Box<P>,
     /// all symbolic scalars that have been created for this state
-    symbolic_strings: BTreeMap<String, SymbolicString>,
+    symbolic_strings: HashMap<String, SymbolicString>,
     /// the next address to create a symbolic value in memory
-    symbolic_memory_address: u64
+    symbolic_memory_address: u64,
+    /// the index for the next expression_complexity variable
+    next_expression_complexity_variable: usize
 }
 
 
@@ -36,13 +38,14 @@ impl<P: Platform<P>> State<P> {
         -> State<P> {
 
         State {
-            scalars: BTreeMap::new(),
+            scalars: HashMap::new(),
             path_constraints: Vec::new(),
             merged_constraints: Vec::new(),
             memory: memory,
             platform: platform,
-            symbolic_strings: BTreeMap::new(),
-            symbolic_memory_address: DEFAULT_SYMBOLIC_MEMORY_ADDRESS
+            symbolic_strings: HashMap::new(),
+            symbolic_memory_address: DEFAULT_SYMBOLIC_MEMORY_ADDRESS,
+            next_expression_complexity_variable: 0
         }
     }
 
@@ -87,6 +90,27 @@ impl<P: Platform<P>> State<P> {
                         .collect::<Vec<String>>()
                         .join(","));
         }
+    }
+
+
+    /// Add the expression to constraints, and return a scalar expression to use
+    /// in its place
+    pub fn expression_complexity_variable(&mut self, expression: il::Expression)
+        -> Result<il::Expression> {
+
+        let scalar_expression =
+            il::expr_scalar(
+                format!("ecv_{}", self.next_expression_complexity_variable),
+                expression.bits());
+
+        self.next_expression_complexity_variable += 1;
+
+        self.add_path_constraint(
+            &il::Expression::cmpeq(
+                scalar_expression.clone().into(),
+                expression)?)?;
+
+        Ok(scalar_expression)
     }
 
 
@@ -304,6 +328,7 @@ impl<P: Platform<P>> State<P> {
     /// Evaluates the expression to a single, concrete value
     pub fn eval(&self, expression: &il::Expression)
     -> Result<Option<il::Constant>> {
+
         if expression.all_constants() {
             Ok(Some(eval(&expression)?))
         }
@@ -405,7 +430,16 @@ impl<P: Platform<P>> State<P> {
         Ok(match *operation {
             il::Operation::Assign { ref dst, ref src } => {
                 let src = self.symbolize_expression(src)?;
+                let src = if expression_complexity(&src) > 256 {
+                    self.expression_complexity_variable(src)?
+                }
+                else {
+                    src
+                };
                 self.set_scalar(dst.name(), &src)?;
+                // if dst.name().len() >= 3 {
+                //     println!("{} = {}", dst, simplify(&src)?);
+                // }
                 vec![Successor::new(self, SuccessorType::FallThrough)]
             },
             il::Operation::Store { ref index, ref src } => {
@@ -632,7 +666,9 @@ impl<P: Platform<P>> Clone for State<P> {
             memory: self.memory.clone(),
             platform: self.platform.box_clone(),
             symbolic_strings: self.symbolic_strings.clone(),
-            symbolic_memory_address: self.symbolic_memory_address
+            symbolic_memory_address: self.symbolic_memory_address,
+            next_expression_complexity_variable:
+                self.next_expression_complexity_variable
         }
     }
 }
