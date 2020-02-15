@@ -1,11 +1,9 @@
-use error::*;
-use finch::executor::{Driver, State, Memory};
-use platform::Platform;
-
+use crate::error::*;
+use crate::platform::Platform;
+use finch::executor::{Driver, Memory, State};
 
 const MAX_DRIVER_MERGE: usize = 16;
 const DRIVER_CULL_SIZE: usize = 32;
-
 
 /// Drive the given driver until it hits the given driver, or until max_steps
 /// has been hit.
@@ -14,28 +12,30 @@ const DRIVER_CULL_SIZE: usize = 32;
 pub fn drive_to_address<P: Platform<P>>(
     driver: Driver<P>,
     target_address: u64,
-    max_steps: usize
+    max_steps: usize,
 ) -> Result<Vec<Driver<P>>> {
     let mut drivers = vec![driver];
     let mut final_drivers = Vec::new();
 
     for _step in 0..max_steps {
         if (_step & 0xfff) == 0 {
-            println!("drive_to_address step={} drivers.len()={} final_drivers.len()={}",
-                     _step,
-                     drivers.len(),
-                     final_drivers.len());
+            println!(
+                "drive_to_address step={} drivers.len()={} final_drivers.len()={}",
+                _step,
+                drivers.len(),
+                final_drivers.len()
+            );
         }
         let mut step_drivers = Vec::new();
         for driver in drivers {
-
             for driver in driver.step()? {
-                if driver.address()
+                if driver
+                    .address()
                     .map(|address| address == target_address)
-                    .unwrap_or(false) {
+                    .unwrap_or(false)
+                {
                     final_drivers.push(driver);
-                }
-                else {
+                } else {
                     step_drivers.push(driver);
                 }
             }
@@ -65,16 +65,12 @@ pub fn drive_to_address<P: Platform<P>>(
     // TODO HACK for debugging
     if final_drivers.len() == 0 {
         Ok(drivers)
-    }
-    else {
+    } else {
         Ok(final_drivers)
     }
 }
 
-
-pub fn merge_drivers<P: Platform<P>>(drivers: Vec<Driver<P>>)
-    -> Result<Driver<P>> {
-
+pub fn merge_drivers<P: Platform<P>>(drivers: Vec<Driver<P>>) -> Result<Driver<P>> {
     if drivers.is_empty() {
         bail!("Tried to merge an empty vector of drivers");
     }
@@ -86,16 +82,13 @@ pub fn merge_drivers<P: Platform<P>>(drivers: Vec<Driver<P>>)
     let mut driver = drivers[0].clone();
     if drivers.len() < MAX_DRIVER_MERGE {
         let memory = Memory::new(driver.state().memory().endian());
-        let sum = State::new(
-            memory,
-            drivers[0].state().platform().box_clone()
-        );
-        let state = drivers.into_iter().fold(sum, |sum, driver|
-            sum.merge(driver.state()).unwrap());
+        let sum = State::new(memory, drivers[0].state().platform().box_clone());
+        let state = drivers
+            .into_iter()
+            .fold(sum, |sum, driver| sum.merge(driver.state()).unwrap());
 
         *driver.state_mut() = state;
-    }
-    else {
+    } else {
         // Merge the first driver, the last driver, and some intermediate
         // drivers
         let state = drivers[0].state().clone();

@@ -1,20 +1,18 @@
-use error::*;
+use crate::error::*;
+use crate::platform::linux::FileDescriptor;
 use falcon::{il, RC};
-use platform::linux::FileDescriptor;
 use std::collections::HashMap;
 use std::fs::File;
 use std::io::Read;
 use std::path::PathBuf;
-
 
 /// A Whence, used when seeking a file descriptor.
 #[derive(Clone, Debug, Deserialize, Serialize)]
 pub enum Whence {
     Set,
     Cursor,
-    End
+    End,
 }
-
 
 /// A basic model of the Linux Filesystem
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
@@ -22,9 +20,8 @@ pub struct FileSystem {
     file_descriptors: HashMap<usize, FileDescriptor>,
     files: HashMap<String, RC<Vec<il::Expression>>>,
     base_path: Option<PathBuf>,
-    next_fd: usize
+    next_fd: usize,
 }
-
 
 impl FileSystem {
     /// Create a new model of the Linux Filesystem.
@@ -39,7 +36,7 @@ impl FileSystem {
             file_descriptors: HashMap::new(),
             files: HashMap::new(),
             base_path: base_path,
-            next_fd: 0
+            next_fd: 0,
         };
 
         fs.create("/stdin")?;
@@ -49,29 +46,25 @@ impl FileSystem {
         Ok(fs)
     }
 
-
     /// Get a path with the base path prepended, if we have a base path.
     fn get_path(&self, path: &str) -> PathBuf {
         match self.base_path {
             Some(ref base_path) => {
                 if path.starts_with("/") {
                     base_path.join(path.get(1..(path.len())).unwrap())
-                }
-                else {
+                } else {
                     base_path.join(path)
                 }
-            },
-            None => path.to_string().into()
+            }
+            None => path.to_string().into(),
         }
     }
-
 
     fn next_fd(&mut self) -> usize {
         let next_fd = self.next_fd;
         self.next_fd += 1;
         next_fd
     }
-
 
     fn add_file_descriptor(&mut self, path: &str) -> usize {
         let file_descriptor = FileDescriptor::new(self.next_fd(), path);
@@ -80,56 +73,59 @@ impl FileSystem {
         fd
     }
 
-
     /// Get a mutable reference to a `FileDescriptor` if it exists.
     pub fn fd_mut(&mut self, fd: usize) -> Option<&mut FileDescriptor> {
         self.file_descriptors.get_mut(&fd)
     }
 
-
     /// Seek a file descriptor, according to the whence and offset.
-    pub fn fd_seek(&mut self, fd: usize, offset: isize, seek: Whence)
-        -> Result<usize> {
-
+    pub fn fd_seek(&mut self, fd: usize, offset: isize, seek: Whence) -> Result<usize> {
         match seek {
             Whence::Set => {
-                self.file_descriptors.get_mut(&fd)
+                self.file_descriptors
+                    .get_mut(&fd)
                     .ok_or("Could not find fd for fd_seek")?
                     .set_offset(offset as usize);
-            },
+            }
             Whence::Cursor => {
-                let mut fd = self.file_descriptors.get_mut(&fd)
+                let fd = self
+                    .file_descriptors
+                    .get_mut(&fd)
                     .ok_or("Could not find fd for fd_seek")?;
 
                 let cur_offset = fd.offset();
                 fd.set_offset((cur_offset as isize + offset) as usize);
-            },
+            }
             Whence::End => {
-                let path = self.file_descriptors.get(&fd)
+                let path = self
+                    .file_descriptors
+                    .get(&fd)
                     .ok_or("Could not find fd for fd_seek")?
                     .path()
                     .to_string(); // kill the borrow
-                let filesize = self.files.get(&path)
+                let filesize = self
+                    .files
+                    .get(&path)
                     .ok_or("Could not find file for fd_seek SEEK_END")?
                     .len();
-                self.file_descriptors.get_mut(&fd)
+                self.file_descriptors
+                    .get_mut(&fd)
                     .ok_or("Could not find fd for fd_seek")?
                     .set_offset((filesize as isize + offset) as usize);
             }
         }
 
-        Ok(self.file_descriptors
+        Ok(self
+            .file_descriptors
             .get(&fd)
             .ok_or("Could not find fd for fd_seek")?
             .offset())
     }
 
-
     /// Returns true if the file descriptor exists.
     pub fn fd_valid(&self, fd: usize) -> bool {
         self.file_descriptors.get(&fd).is_some()
     }
-
 
     /// Attempt to open a file and read it into the filesystem model. Returns
     /// a file descriptor if the file exists, or None.
@@ -144,19 +140,17 @@ impl FileSystem {
             let mut buf = Vec::new();
             file.read_to_end(&mut buf)?;
 
-            let bytes =
-                buf.into_iter()
-                    .map(|byte| il::expr_const(byte as u64, 8))
-                    .collect::<Vec<il::Expression>>();
+            let bytes = buf
+                .into_iter()
+                .map(|byte| il::expr_const(byte as u64, 8))
+                .collect::<Vec<il::Expression>>();
 
             self.files.insert(path.to_string(), RC::new(bytes));
             Ok(Some(self.add_file_descriptor(path)))
-        }
-        else {
+        } else {
             Ok(None)
         }
     }
-
 
     /// Open a file, or create it if it does not exist. Returns file descriptor.
     pub fn create(&mut self, path: &str) -> Result<usize> {
@@ -168,40 +162,33 @@ impl FileSystem {
         Ok(self.add_file_descriptor(path))
     }
 
-
     /// Return true if a file exists, false otherwise
     pub fn exists(&self, path: &str) -> bool {
         self.files.get(path).is_some() || PathBuf::from(path.to_string()).exists()
     }
-
 
     /// Zeroize the data in a file
     pub fn zeroize(&mut self, path: &str) {
         self.files.insert(path.to_string(), RC::new(Vec::new()));
     }
 
-
     /// Get data from a file
     pub fn file_bytes(&self, path: &str) -> Option<&[il::Expression]> {
         self.files.get(path).map(|v| v.as_slice())
     }
 
-
     /// Get a mutable reference to the data for a file
-    pub fn file_bytes_mut(&mut self, path: &str)
-        -> Option<&mut Vec<il::Expression>> {
-
+    pub fn file_bytes_mut(&mut self, path: &str) -> Option<&mut Vec<il::Expression>> {
         self.files.get_mut(path).map(|v| RC::make_mut(v))
     }
 
-
     /// Get the bytes to a file pointed to by a file descriptor
     pub fn fd_bytes(&self, fd: usize) -> Option<&[il::Expression]> {
-        self.file_descriptors.get(&fd)
+        self.file_descriptors
+            .get(&fd)
             .and_then(|fd| self.files.get(fd.path()))
             .map(|bytes| bytes.as_ref().as_ref())
     }
-
 
     /// Close a file descriptor. Returns true if file descriptor existed, false
     /// otherwise
@@ -214,21 +201,17 @@ impl FileSystem {
                 self.next_fd = self.next_fd - 1;
             }
             true
-        }
-        else {
+        } else {
             false
         }
     }
 
-
     /// Read from a file descriptor
-    pub fn read_fd(&mut self, fd: usize, length: usize)
-        -> Result<Option<Vec<il::Expression>>> {
-
+    pub fn read_fd(&mut self, fd: usize, length: usize) -> Result<Option<Vec<il::Expression>>> {
         let mut fd: FileDescriptor = match self.file_descriptors.get_mut(&fd) {
             Some(fd) => fd.clone(),
-            None => { 
-                return Ok(None); 
+            None => {
+                return Ok(None);
             }
         };
 
@@ -238,11 +221,8 @@ impl FileSystem {
         Ok(Some(bytes))
     }
 
-
     /// Write to a file descriptor
-    pub fn write_fd(&mut self, fd: usize, data: Vec<il::Expression>)
-        -> Result<()> {
-
+    pub fn write_fd(&mut self, fd: usize, data: Vec<il::Expression>) -> Result<()> {
         let mut fd: FileDescriptor = match self.file_descriptors.get_mut(&fd) {
             Some(fd) => fd.clone(),
             None => {
@@ -255,21 +235,20 @@ impl FileSystem {
         Ok(())
     }
 
-
     /// Get size of file pointed to by file descriptor
     pub fn size_fd(&self, fd: usize) -> Option<usize> {
-        self.file_descriptors.get(&fd)
+        self.file_descriptors
+            .get(&fd)
             .and_then(|fd| self.files.get(fd.path()))
             .map(|file_contents| file_contents.len())
     }
-
 
     /// Write data into a file at an offset
     pub fn write(
         &mut self,
         path: &str,
         mut write_data: Vec<il::Expression>,
-        offset: usize
+        offset: usize,
     ) -> Result<()> {
         println!("Calling write {}", path);
         if let Some(data) = self.files.get_mut(path) {
@@ -281,23 +260,23 @@ impl FileSystem {
 
             if offset == data.len() {
                 RC::make_mut(data).append(&mut write_data);
-            }
-            else {
-                let mut new_data =
-                    data.get(0..offset)
-                        .map(|data| data.to_vec())
-                        .ok_or("Failed to get data bytes")?;
+            } else {
+                let mut new_data = data
+                    .get(0..offset)
+                    .map(|data| data.to_vec())
+                    .ok_or("Failed to get data bytes")?;
                 new_data.append(&mut write_data);
                 if data.len() > offset + write_data.len() {
                     new_data.append(
-                        &mut data.get(
-                            (offset + write_data.len())..data.len())
+                        &mut data
+                            .get((offset + write_data.len())..data.len())
                             .ok_or("Failed to get data bytes")?
-                            .to_vec());
+                            .to_vec(),
+                    );
                 }
                 *data = RC::new(new_data);
             }
-            return Ok(())
+            return Ok(());
         }
 
         let mut data: Vec<il::Expression> = Vec::new();
@@ -306,11 +285,10 @@ impl FileSystem {
         }
         data.append(&mut write_data);
         self.files.insert(path.to_string(), RC::new(data));
-    
+
         Ok(())
     }
 }
-
 
 #[test]
 fn test() {

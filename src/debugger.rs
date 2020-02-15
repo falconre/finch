@@ -1,11 +1,9 @@
-use error::*;
+use crate::error::*;
 use finch::executor::Driver;
-use platform::Platform;
+use finch::platform::Platform;
 use std::collections::HashMap;
 
-
 const MAX_DRIVERS: usize = 256;
-
 
 pub struct Debugger<P: Platform<P>> {
     breakpoints: Vec<u64>,
@@ -13,9 +11,8 @@ pub struct Debugger<P: Platform<P>> {
     drivers: Vec<Driver<P>>,
     killpoints: Vec<u64>,
     merge_points: Vec<u64>,
-    merged_drivers: HashMap<u64, Driver<P>>
+    merged_drivers: HashMap<u64, Driver<P>>,
 }
-
 
 impl<P: Platform<P>> Debugger<P> {
     pub fn new(drivers: Vec<Driver<P>>) -> Debugger<P> {
@@ -82,16 +79,19 @@ impl<P: Platform<P>> Debugger<P> {
 
     /// Apply a filter to this Debugger's drivers, and return a new Debugger
     /// with only those Debuggers
-    pub fn filter<F>(&self, filter: F) -> Debugger<P> where F: Fn(&Driver<P>) -> bool {
+    pub fn filter<F>(&self, filter: F) -> Debugger<P>
+    where
+        F: Fn(&Driver<P>) -> bool,
+    {
         Debugger {
             breakpoints: self.breakpoints.clone(),
             breaked_drivers: self.breaked_drivers.clone(),
-            drivers:
-                self.drivers
-                    .iter()
-                    .filter(|driver| filter(driver))
-                    .cloned()
-                    .collect::<Vec<Driver<P>>>(),
+            drivers: self
+                .drivers
+                .iter()
+                .filter(|driver| filter(driver))
+                .cloned()
+                .collect::<Vec<Driver<P>>>(),
             killpoints: self.killpoints.clone(),
             merge_points: self.merge_points.clone(),
             merged_drivers: self.merged_drivers.clone(),
@@ -117,7 +117,7 @@ impl<P: Platform<P>> Debugger<P> {
             merge_points: &[u64],
             killpoints: &[u64],
             breaked: &mut Vec<Driver<P>>,
-            merged: &mut HashMap<u64, Driver<P>>
+            merged: &mut HashMap<u64, Driver<P>>,
         ) -> Result<Vec<Driver<P>>> {
             let mut step_drivers = Vec::new();
             for driver in drivers {
@@ -126,21 +126,21 @@ impl<P: Platform<P>> Debugger<P> {
                         info!("Driver hit breakpoint 0x{:x}", address);
                         breaked.push(driver);
                         continue;
-                    }
-                    else if merge_points.contains(&address) {
+                    } else if merge_points.contains(&address) {
                         info!("Driver hit merge point 0x{:x}", address);
                         if let Some(merged_driver) = merged.get_mut(&address) {
                             *merged_driver = match merged_driver.merge(&driver)? {
                                 Some(driver) => driver,
-                                None => bail!("Failed to merge drivers at \
-                                               merge point")
+                                None => bail!(
+                                    "Failed to merge drivers at \
+                                               merge point"
+                                ),
                             };
                             continue;
                         }
                         merged.insert(address, driver);
                         continue;
-                    }
-                    else if killpoints.contains(&address) {
+                    } else if killpoints.contains(&address) {
                         info!("Driver hit kill point 0x{:x}", address);
                         continue;
                     }
@@ -153,16 +153,16 @@ impl<P: Platform<P>> Debugger<P> {
         let mut drivers: Vec<Driver<P>> = self.drivers.clone();
 
         let mut last_step_drivers_len = drivers.len();
-        
-        for _i in 0..steps {
 
-            let temp_drivers = 
-                bin_drivers(drivers,
-                            &self.breakpoints,
-                            &self.merge_points,
-                            &self.killpoints,
-                            &mut self.breaked_drivers,
-                            &mut self.merged_drivers)?;
+        for _i in 0..steps {
+            let temp_drivers = bin_drivers(
+                drivers,
+                &self.breakpoints,
+                &self.merge_points,
+                &self.killpoints,
+                &mut self.breaked_drivers,
+                &mut self.merged_drivers,
+            )?;
 
             // let drivers_ =
             //     temp_drivers.into_par_iter()
@@ -175,16 +175,14 @@ impl<P: Platform<P>> Debugger<P> {
             //             Ok(v)
             //         });
 
-            let drivers_ =
-                temp_drivers.into_iter()
-                    .try_fold(Vec::new(), |mut v, d| {
-                        v.append(&mut d.step()?);
-                        Ok(v)
-                    });
+            let drivers_ = temp_drivers.into_iter().try_fold(Vec::new(), |mut v, d| {
+                v.append(&mut d.step()?);
+                Ok(v)
+            });
 
             drivers = match drivers_ {
                 Ok(drivers) => drivers,
-                Err(e) => return Err(e)
+                Err(e) => return Err(e),
             };
 
             let address = drivers.get(0).unwrap().address().unwrap_or(0);
@@ -195,13 +193,10 @@ impl<P: Platform<P>> Debugger<P> {
                 let driver = drivers.get(0).unwrap();
                 let trace = driver.trace();
                 let sliced_trace =
-                    trace.slice_backwards(
-                        &il::scalar("r14", 64), driver.program())?;
+                    trace.slice_backwards(&il::scalar("r14", 64), driver.program())?;
 
                 for trace_item in sliced_trace.items() {
-                    let location =
-                        trace_item.program_location()
-                            .apply(driver.program())?;
+                    let location = trace_item.program_location().apply(driver.program())?;
                     println!("{}", location);
                 }
                 println!("Trace is {} items", driver.trace().items().len());
@@ -228,18 +223,22 @@ impl<P: Platform<P>> Debugger<P> {
             }
 
             if drivers.len() > last_step_drivers_len {
-                debug!("Had {} drivers, now have {} drivers",
+                debug!(
+                    "Had {} drivers, now have {} drivers",
                     last_step_drivers_len,
-                    drivers.len());
+                    drivers.len()
+                );
                 last_step_drivers_len = drivers.len();
             }
 
             if drivers.len() > MAX_DRIVERS {
-                warn!("Debugger has {} drivers, which is {} more than max of \
+                warn!(
+                    "Debugger has {} drivers, which is {} more than max of \
                        {}. Deleting half of the drivers",
-                      drivers.len(),
-                      drivers.len() - MAX_DRIVERS,
-                      MAX_DRIVERS);
+                    drivers.len(),
+                    drivers.len() - MAX_DRIVERS,
+                    MAX_DRIVERS
+                );
                 for i in 0..drivers.len() / 2 {
                     drivers.remove(i);
                 }
@@ -247,12 +246,14 @@ impl<P: Platform<P>> Debugger<P> {
             }
         }
 
-        self.drivers = bin_drivers(drivers,
-                                   &self.breakpoints,
-                                   &self.merge_points,
-                                   &self.killpoints,
-                                   &mut self.breaked_drivers,
-                                   &mut self.merged_drivers)?;
+        self.drivers = bin_drivers(
+            drivers,
+            &self.breakpoints,
+            &self.merge_points,
+            &self.killpoints,
+            &mut self.breaked_drivers,
+            &mut self.merged_drivers,
+        )?;
 
         Ok(())
     }

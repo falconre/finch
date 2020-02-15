@@ -20,5 +20,5 @@ pub struct Constants {
     pub PROT_EXEC: u64,
     pub SEEK_SET: u64,
     pub SEEK_CUR: u64,
-    pub SEEK_END: u64
+    pub SEEK_END: u64,
 }

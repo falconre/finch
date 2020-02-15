@@ -1,18 +1,14 @@
 //! A convenience struct for maintaining state of symbolic strings.
 
-use executor::*;
+use crate::executor::*;
 
 #[derive(Clone, Debug)]
 pub struct SymbolicString {
-    bytes: Vec<ExpressionHash>
+    bytes: Vec<ExpressionHash>,
 }
-
 
 impl SymbolicString {
     pub fn new(bytes: Vec<ExpressionHash>) -> SymbolicString {
-
-        SymbolicString {
-            bytes: bytes
-        }
+        SymbolicString { bytes: bytes }
     }
 }

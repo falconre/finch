@@ -1,11 +1,12 @@
-use debugger::Debugger;
-use error::*;
-use platform::Platform;
+use crate::debugger::Debugger;
+use crate::error::*;
+use finch::platform::Platform;
 use rustyline;
 use std::fs::File;
 use std::io::Read;
 use std::path::Path;
 
+use nom::{alt, map_res, named, tag, take_while1, tuple};
 
 #[derive(Clone, Debug)]
 pub enum Command {
@@ -21,33 +22,28 @@ pub enum Command {
     InfoBreakpoints,
     InfoDrivers,
     InfoKillPoints,
-    Quit
+    Quit,
 }
-
-
 
 fn map_address(input: &str) -> ::std::result::Result<u64, ::std::num::ParseIntError> {
-  u64::from_str_radix(input, 16)
+    u64::from_str_radix(input, 16)
 }
-
 
 fn map_decimal_u64(input: &str) -> ::std::result::Result<u64, ::std::num::ParseIntError> {
-  u64::from_str_radix(input, 10)
+    u64::from_str_radix(input, 10)
 }
-
 
 fn is_hex_digit(c: char) -> bool {
-  match c {
-    '0'..='9' | 'a'..='f' | 'A'..='F' => true,
-    _ => false,
-  }
+    match c {
+        '0'..='9' | 'a'..='f' | 'A'..='F' => true,
+        _ => false,
+    }
 }
-
 
 fn is_decimal_digit(c: char) -> bool {
     match c {
         '0'..='9' => true,
-        _ => false
+        _ => false,
     }
 }
 
@@ -67,16 +63,12 @@ named!(parse_u64<&str, u64>, alt!(
     parse_decimal_u64
 ));
 
-
-
 fn is_space(c: char) -> bool {
-  match c {
-    ' ' | '\t' => true,
-    _ => false,
-  }
+    match c {
+        ' ' | '\t' => true,
+        _ => false,
+    }
 }
-
-
 
 named!(parse_info<&str, Command>, alt!(
     alt!(tag!("breakpoints") | tag!("b")) => {|_| Command::InfoBreakpoints} |
@@ -84,11 +76,9 @@ named!(parse_info<&str, Command>, alt!(
     alt!(tag!("killpoints") | tag!("k")) => {|_| Command::InfoKillPoints}
 ));
 
-
 named!(parse_delete<&str, Command>, alt!(
     alt!(tag!("breakpoints") | tag!("b")) => { |_| Command::DeleteBreakpoints }
 ));
-
 
 named!(parse_command <&str, Command>, alt!(
         tuple!(
@@ -136,19 +126,14 @@ named!(parse_command <&str, Command>, alt!(
         alt!(tag!("quit") | tag!("q")) => { |_| Command::Quit }
     ));
 
-
 pub struct Interpreter<P: Platform<P>> {
-    debugger: Debugger<P>
+    debugger: Debugger<P>,
 }
-
 
 impl<P: Platform<P>> Interpreter<P> {
     pub fn new(debugger: Debugger<P>) -> Interpreter<P> {
-        Interpreter {
-            debugger: debugger
-        }
+        Interpreter { debugger: debugger }
     }
-
 
     pub fn script(&mut self, filename: &Path) -> Result<()> {
         let mut file = File::open(filename)?;
@@ -170,13 +155,12 @@ impl<P: Platform<P>> Interpreter<P> {
 
             match command {
                 Command::Quit => break,
-                _ => self.execute(command)?
+                _ => self.execute(command)?,
             }
         }
 
         Ok(())
     }
-
 
     pub fn interactive(&mut self) -> Result<()> {
         let mut rl = rustyline::Editor::<()>::new();
@@ -195,65 +179,69 @@ impl<P: Platform<P>> Interpreter<P> {
 
             match command {
                 Command::Quit => break 'debugger_loop,
-                _ => self.execute(command)?
+                _ => self.execute(command)?,
             }
         }
 
         Ok(())
     }
 
-
     pub fn execute(&mut self, command: Command) -> Result<()> {
         match command {
             Command::AddBreakpoint(address) => {
                 self.debugger.push_breakpoint(address);
                 println!("Breakpoint 0x{:x} added", address);
-            },
+            }
             Command::AddKillPoint(address) => {
                 self.debugger.push_killpoint(address);
                 println!("Killpoint 0x{:x} added", address);
-            },
+            }
             Command::Continue(steps) => {
                 println!("Continuing {} steps", steps);
                 self.debugger.continue_(steps)?
-            },
+            }
             Command::CullDrivers => {
                 println!("Drivers culled");
                 self.debugger.cull_drivers()
-            },
+            }
             Command::DeleteBreakpoints => {
                 self.debugger.delete_breakpoints();
                 self.debugger.unbreak_drivers();
                 println!("All breakpoints deleted");
-            },
+            }
             Command::Flatten => {
                 self.debugger.flatten()?;
-            },
+            }
             Command::Help => {
                 println!("commands: help, quit");
-            },
+            }
             Command::InfoBreakpoints => {
                 println!("{} breakpoints", self.debugger.breakpoints().len());
                 for breakpoint in self.debugger.breakpoints() {
                     println!("  0x{:x}", breakpoint);
                 }
-            },
+            }
             Command::InfoDrivers => {
-                println!("There are {} regular drivers",
-                    self.debugger.drivers().len());
-                println!("There are {} breaked drivers",
-                    self.debugger.breaked_drivers().len());
-                println!("There are {} merged drivers",
-                    self.debugger.merged_drivers().len())
-            },
+                println!(
+                    "There are {} regular drivers",
+                    self.debugger.drivers().len()
+                );
+                println!(
+                    "There are {} breaked drivers",
+                    self.debugger.breaked_drivers().len()
+                );
+                println!(
+                    "There are {} merged drivers",
+                    self.debugger.merged_drivers().len()
+                )
+            }
             Command::InfoKillPoints => {
                 println!("{} killpoints", self.debugger.killpoints().len());
                 for killpoint in self.debugger.killpoints() {
                     println!("  0x{:x}", killpoint);
                 }
-            },
-            Command::Empty |
-            Command::Quit => {}
+            }
+            Command::Empty | Command::Quit => {}
         }
 
         Ok(())
