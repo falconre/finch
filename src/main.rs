@@ -30,10 +30,9 @@ use error::*;
 use falcon::loader::Loader;
 use finch::executor::Driver;
 use finch::platform;
-use finch::platform::Platform;
 use std::path::{Path, PathBuf};
 
-fn run2<P: Platform<P>>(driver: Driver<P>, matches: &clap::ArgMatches) -> Result<()> {
+fn run2(driver: Driver, matches: &clap::ArgMatches) -> Result<()> {
     if matches.is_present("debugger") {
         let debugger = debugger::Debugger::new(vec![driver]);
         let mut interpreter = interpreter::Interpreter::new(debugger);
@@ -110,8 +109,12 @@ fn run() -> Result<()> {
             _ => bail!("Invalid log level"),
         };
         if let Some(level_filter) = level_filter {
-            simplelog::TermLogger::init(level_filter, simplelog::Config::default(), simplelog::TerminalMode::Mixed)
-                .expect("Failed to initialize logging");
+            simplelog::TermLogger::init(
+                level_filter,
+                simplelog::Config::default(),
+                simplelog::TerminalMode::Mixed,
+            )
+            .expect("Failed to initialize logging");
         }
     }
 

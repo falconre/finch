@@ -1,21 +1,20 @@
 use crate::error::*;
 use finch::executor::Driver;
-use finch::platform::Platform;
 use std::collections::HashMap;
 
 const MAX_DRIVERS: usize = 256;
 
-pub struct Debugger<P: Platform<P>> {
+pub struct Debugger {
     breakpoints: Vec<u64>,
-    breaked_drivers: Vec<Driver<P>>,
-    drivers: Vec<Driver<P>>,
+    breaked_drivers: Vec<Driver>,
+    drivers: Vec<Driver>,
     killpoints: Vec<u64>,
     merge_points: Vec<u64>,
-    merged_drivers: HashMap<u64, Driver<P>>,
+    merged_drivers: HashMap<u64, Driver>,
 }
 
-impl<P: Platform<P>> Debugger<P> {
-    pub fn new(drivers: Vec<Driver<P>>) -> Debugger<P> {
+impl Debugger {
+    pub fn new(drivers: Vec<Driver>) -> Debugger {
         Debugger {
             breakpoints: Vec::new(),
             breaked_drivers: Vec::new(),
@@ -34,7 +33,7 @@ impl<P: Platform<P>> Debugger<P> {
         &self.breakpoints
     }
 
-    pub fn breaked_drivers(&self) -> &[Driver<P>] {
+    pub fn breaked_drivers(&self) -> &[Driver] {
         &self.breaked_drivers
     }
 
@@ -46,7 +45,7 @@ impl<P: Platform<P>> Debugger<P> {
         self.breakpoints = Vec::new();
     }
 
-    pub fn drivers(&self) -> &[Driver<P>] {
+    pub fn drivers(&self) -> &[Driver] {
         &self.drivers
     }
 
@@ -58,7 +57,7 @@ impl<P: Platform<P>> Debugger<P> {
         &self.merge_points
     }
 
-    pub fn merged_drivers(&self) -> &HashMap<u64, Driver<P>> {
+    pub fn merged_drivers(&self) -> &HashMap<u64, Driver> {
         &self.merged_drivers
     }
 
@@ -79,9 +78,9 @@ impl<P: Platform<P>> Debugger<P> {
 
     /// Apply a filter to this Debugger's drivers, and return a new Debugger
     /// with only those Debuggers
-    pub fn filter<F>(&self, filter: F) -> Debugger<P>
+    pub fn filter<F>(&self, filter: F) -> Debugger
     where
-        F: Fn(&Driver<P>) -> bool,
+        F: Fn(&Driver) -> bool,
     {
         Debugger {
             breakpoints: self.breakpoints.clone(),
@@ -91,7 +90,7 @@ impl<P: Platform<P>> Debugger<P> {
                 .iter()
                 .filter(|driver| filter(driver))
                 .cloned()
-                .collect::<Vec<Driver<P>>>(),
+                .collect::<Vec<Driver>>(),
             killpoints: self.killpoints.clone(),
             merge_points: self.merge_points.clone(),
             merged_drivers: self.merged_drivers.clone(),
@@ -111,14 +110,14 @@ impl<P: Platform<P>> Debugger<P> {
     }
 
     pub fn continue_(&mut self, steps: usize) -> Result<()> {
-        fn bin_drivers<P: Platform<P>>(
-            drivers: Vec<Driver<P>>,
+        fn bin_drivers(
+            drivers: Vec<Driver>,
             breakpoints: &[u64],
             merge_points: &[u64],
             killpoints: &[u64],
-            breaked: &mut Vec<Driver<P>>,
-            merged: &mut HashMap<u64, Driver<P>>,
-        ) -> Result<Vec<Driver<P>>> {
+            breaked: &mut Vec<Driver>,
+            merged: &mut HashMap<u64, Driver>,
+        ) -> Result<Vec<Driver>> {
             let mut step_drivers = Vec::new();
             for driver in drivers {
                 if let Some(address) = driver.address() {
@@ -150,7 +149,7 @@ impl<P: Platform<P>> Debugger<P> {
             Ok(step_drivers)
         }
 
-        let mut drivers: Vec<Driver<P>> = self.drivers.clone();
+        let mut drivers: Vec<Driver> = self.drivers.clone();
 
         let mut last_step_drivers_len = drivers.len();
 

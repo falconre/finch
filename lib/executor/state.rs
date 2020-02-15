@@ -10,7 +10,7 @@ const DEFAULT_SYMBOLIC_MEMORY_ADDRESS: u64 = 0x8000_0000;
 
 /// A symbolic `State`.
 #[derive(Debug)]
-pub struct State<P: Platform<P>> {
+pub struct State {
     /// scalar variables in this current state
     scalars: HashMap<String, ExpressionHash>,
     /// path constraints for this state
@@ -20,7 +20,7 @@ pub struct State<P: Platform<P>> {
     /// the memory model for this state
     pub(crate) memory: Memory,
     /// the platform for this state
-    pub(crate) platform: Box<P>,
+    pub(crate) platform: Box<dyn Platform>,
     /// all symbolic scalars that have been created for this state
     symbolic_strings: HashMap<String, SymbolicString>,
     /// the next address to create a symbolic value in memory
@@ -29,9 +29,9 @@ pub struct State<P: Platform<P>> {
     next_expression_complexity_variable: usize,
 }
 
-impl<P: Platform<P>> State<P> {
+impl State {
     /// Create a new `State` from the given memory model.
-    pub fn new(memory: Memory, platform: Box<P>) -> State<P> {
+    pub fn new(memory: Memory, platform: Box<dyn Platform>) -> State {
         State {
             scalars: HashMap::new(),
             path_constraints: Vec::new(),
@@ -218,12 +218,12 @@ impl<P: Platform<P>> State<P> {
     }
 
     /// Get the `Platform` for this `State`.
-    pub fn platform(&self) -> &P {
+    pub fn platform(&self) -> &dyn Platform {
         self.platform.as_ref()
     }
 
     /// Get a mutable reference to the `Platform` for this `State`.
-    pub fn platform_mut(&mut self) -> &mut P {
+    pub fn platform_mut(&mut self) -> &mut dyn Platform {
         self.platform.as_mut()
     }
 
@@ -433,7 +433,7 @@ impl<P: Platform<P>> State<P> {
     }
 
     /// Execute an `il::Operation`, returning the post-execution `Successor`.
-    pub fn execute(mut self, operation: &il::Operation) -> Result<Vec<Successor<P>>> {
+    pub fn execute(mut self, operation: &il::Operation) -> Result<Vec<Successor>> {
         Ok(match *operation {
             il::Operation::Assign { ref dst, ref src } => {
                 let src = self.symbolize_expression(src)?;
@@ -496,7 +496,9 @@ impl<P: Platform<P>> State<P> {
                     None => Vec::new(),
                 }
             }
-            il::Operation::Intrinsic { ref intrinsic } => P::intrinsic(self, intrinsic)?,
+            il::Operation::Intrinsic { ref intrinsic } => {
+                self.platform.get_intrinsic_handler()(self, intrinsic)?
+            }
             il::Operation::Nop => vec![Successor::new(self, SuccessorType::FallThrough)],
         })
     }
@@ -520,7 +522,7 @@ impl<P: Platform<P>> State<P> {
     }
 
     /// Merge this `State` with another `State`
-    pub fn merge(mut self, other: &State<P>) -> Result<State<P>> {
+    pub fn merge(mut self, other: &State) -> Result<State> {
         let other_constraints = other.constraints_as_expression()?;
         // merge memory
         self.memory = self.memory.merge(&other.memory, &other_constraints)?;
@@ -655,8 +657,8 @@ impl<P: Platform<P>> State<P> {
     }
 }
 
-impl<P: Platform<P>> Clone for State<P> {
-    fn clone(&self) -> State<P> {
+impl Clone for State {
+    fn clone(&self) -> State {
         State {
             scalars: self.scalars.clone(),
             path_constraints: self.path_constraints.clone(),

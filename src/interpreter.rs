@@ -1,6 +1,5 @@
 use crate::debugger::Debugger;
 use crate::error::*;
-use finch::platform::Platform;
 use rustyline;
 use std::fs::File;
 use std::io::Read;
@@ -126,12 +125,12 @@ named!(parse_command <&str, Command>, alt!(
         alt!(tag!("quit") | tag!("q")) => { |_| Command::Quit }
     ));
 
-pub struct Interpreter<P: Platform<P>> {
-    debugger: Debugger<P>,
+pub struct Interpreter {
+    debugger: Debugger,
 }
 
-impl<P: Platform<P>> Interpreter<P> {
-    pub fn new(debugger: Debugger<P>) -> Interpreter<P> {
+impl Interpreter {
+    pub fn new(debugger: Debugger) -> Interpreter {
         Interpreter { debugger: debugger }
     }
 

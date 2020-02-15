@@ -3,28 +3,27 @@
 use crate::error::*;
 use crate::executor::successor::*;
 use crate::executor::{State, StateTranslator, Trace};
-use crate::platform::Platform;
 use falcon::architecture::Architecture;
 use falcon::{il, RC};
 
 /// A `Driver` to driver `State` over an `il::Program`.
 #[derive(Clone, Debug)]
-pub struct Driver<P: Platform<P>> {
+pub struct Driver {
     program: il::Program,
     location: il::ProgramLocation,
-    state: State<P>,
+    state: State,
     architecture: RC<Box<dyn Architecture>>,
     trace: Trace,
 }
 
-impl<P: Platform<P>> Driver<P> {
+impl Driver {
     /// Create a new `Driver` for symbolic execution over Falcon IL.
     pub fn new(
         program: il::Program,
         location: il::ProgramLocation,
-        state: State<P>,
+        state: State,
         architecture: RC<Box<dyn Architecture>>,
-    ) -> Driver<P> {
+    ) -> Driver {
         Driver {
             program: program,
             location: location,
@@ -37,10 +36,10 @@ impl<P: Platform<P>> Driver<P> {
     fn new_full(
         program: il::Program,
         location: il::ProgramLocation,
-        state: State<P>,
+        state: State,
         architecture: RC<Box<dyn Architecture>>,
         trace: Trace,
-    ) -> Driver<P> {
+    ) -> Driver {
         Driver {
             program: program,
             location: location,
@@ -51,7 +50,7 @@ impl<P: Platform<P>> Driver<P> {
     }
 
     /// Step the underlying `State` forward over this `Driver`'s `il::Program`.
-    pub fn step(mut self) -> Result<Vec<Driver<P>>> {
+    pub fn step(mut self) -> Result<Vec<Driver>> {
         // Go ahead and set the trace location
         let index = {
             let location = self.location.apply(&self.program()).unwrap();
@@ -160,7 +159,7 @@ impl<P: Platform<P>> Driver<P> {
                                     self.trace.clone(),
                                 )),
                                 None => {
-                                    let state: State<P> = successor.into();
+                                    let state: State = successor.into();
                                     let state_translator = StateTranslator::new(state);
                                     let function = self
                                         .architecture
@@ -298,12 +297,12 @@ impl<P: Platform<P>> Driver<P> {
     }
 
     /// Retrieve the `State` associated with this driver.
-    pub fn state(&self) -> &State<P> {
+    pub fn state(&self) -> &State {
         &self.state
     }
 
     /// Retrieve a mutable reference to the `State`.
-    pub fn state_mut(&mut self) -> &mut State<P> {
+    pub fn state_mut(&mut self) -> &mut State {
         &mut self.state
     }
 
@@ -313,7 +312,7 @@ impl<P: Platform<P>> Driver<P> {
     }
 
     /// Merge two drivers together, if they are at the same program location
-    pub fn merge(&self, other: &Driver<P>) -> Result<Option<Driver<P>>> {
+    pub fn merge(&self, other: &Driver) -> Result<Option<Driver>> {
         if self.location == other.location {
             Ok(Some(Driver::new(
                 self.program.clone(),
@@ -327,19 +326,8 @@ impl<P: Platform<P>> Driver<P> {
     }
 }
 
-impl<P: Platform<P>> Into<State<P>> for Driver<P> {
-    fn into(self) -> State<P> {
+impl Into<State> for Driver {
+    fn into(self) -> State {
         self.state
     }
 }
-
-// impl<P: Platform<P>> Clone for Driver<P> {
-//     fn clone(&self) -> Driver<P> {
-//         Driver {
-//             program: self.program.clone(),
-//             location: self.location.clone(),
-//             state: self.state.clone(),
-//             architecture: self.architecture.clone()
-//         }
-//     }
-// }

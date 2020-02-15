@@ -7,6 +7,7 @@ use crate::platform::Platform;
 use byteorder::{BigEndian, WriteBytesExt};
 use falcon::loader::{ElfLinker, ElfLinkerBuilder, Loader};
 use falcon::{il, RC};
+use std::any::Any;
 use std::path::PathBuf;
 
 // const ARGV_STRING_LEN: u64 = 256;
@@ -66,7 +67,7 @@ pub struct Amd64 {
 impl Amd64 {
     /// Create a standard driver, set up with a Amd64 Platform, and everything
     /// initialized.
-    pub fn standard_load(filename: &str, base_path: Option<PathBuf>) -> Result<Driver<Amd64>> {
+    pub fn standard_load(filename: &str, base_path: Option<PathBuf>) -> Result<Driver> {
         let mut elf_linker = ElfLinkerBuilder::new(filename.into())
             .do_relocations(false)
             .just_interpreter(true);
@@ -119,7 +120,7 @@ impl Amd64 {
         ))
     }
 
-    fn initialize(mut state: State<Amd64>, elf_linker: &ElfLinker) -> Result<State<Amd64>> {
+    fn initialize(mut state: State, elf_linker: &ElfLinker) -> Result<State> {
         let environment = Environment::new()
             .command_line_argument(EnvironmentString::new_concrete("application_filename"))
             // .environment_variable(
@@ -175,10 +176,7 @@ impl Amd64 {
     }
 
     /// Handle an intrinsic instruction.
-    pub fn intrinsic(
-        mut state: State<Amd64>,
-        intrinsic: &il::Intrinsic,
-    ) -> Result<Vec<Successor<Amd64>>> {
+    pub fn intrinsic(mut state: State, intrinsic: &il::Intrinsic) -> Result<Vec<Successor>> {
         if intrinsic.mnemonic() == "syscall" {
             Amd64::syscall(state)
         } else if intrinsic.mnemonic() == "cpuid" {
@@ -253,7 +251,7 @@ impl Amd64 {
         Ok(buf)
     }
 
-    fn get_arg(state: &mut State<Amd64>, index: usize) -> Result<u64> {
+    fn get_arg(state: &mut State, index: usize) -> Result<u64> {
         let register = match index {
             0 => il::expr_scalar("rdi", 64),
             1 => il::expr_scalar("rsi", 64),
@@ -271,12 +269,14 @@ impl Amd64 {
     }
 
     /// Handle a system call.
-    pub fn syscall(mut state: State<Amd64>) -> Result<Vec<Successor<Amd64>>> {
+    pub fn syscall(mut state: State) -> Result<Vec<Successor>> {
         let syscall_num = state
             .eval_and_concretize(&il::expr_scalar("rax", 64))?
             .ok_or("Failed to get syscall num in rax")?;
 
-        println!("syscall_num is {}", syscall_num);
+        fn platform_mut(state: &mut State) -> &mut Amd64 {
+            state.platform.as_mut().any_mut().downcast_mut().unwrap()
+        }
 
         match syscall_num.value_u64().unwrap() {
             SYSCALL_ACCESS => {
@@ -290,7 +290,7 @@ impl Amd64 {
                     }
                 };
 
-                let result = state.platform().linux.access(&filename, mode);
+                let result = platform_mut(&mut state).linux.access(&filename, mode);
 
                 trace!("access for \"{}\" was {}", filename, result as i64);
                 state.set_scalar("rax", &il::expr_const(result, 64))?;
@@ -298,15 +298,14 @@ impl Amd64 {
             }
             SYSCALL_BRK => {
                 let brk = Amd64::get_arg(&mut state, 0)?;
-                let result = state.platform_mut().linux.brk(brk);
+                let result = platform_mut(&mut state).linux.brk(brk);
                 trace!("brk set to 0x{:x}", result);
                 state.set_scalar("rax", &il::expr_const(result, 64))?;
                 Ok(vec![Successor::new(state, SuccessorType::FallThrough)])
             }
             SYSCALL_CLOSE => {
                 let fd = Amd64::get_arg(&mut state, 0)?;
-                if state
-                    .platform_mut()
+                if platform_mut(&mut state)
                     .linux
                     .file_system_mut()
                     .close_fd(fd as usize)
@@ -328,9 +327,13 @@ impl Amd64 {
                 let fd = Amd64::get_arg(&mut state, 0)?;
                 let statbuf = Amd64::get_arg(&mut state, 1)?;
 
-                match state.platform().linux.file_system().size_fd(fd as usize) {
+                match platform_mut(&mut state)
+                    .linux
+                    .file_system()
+                    .size_fd(fd as usize)
+                {
                     Some(size) => {
-                        let buf = state.platform_mut().fake_stat64(size)?;
+                        let buf = platform_mut(&mut state).fake_stat64(size)?;
                         for i in 0..buf.len() {
                             state
                                 .memory_mut()
@@ -382,8 +385,7 @@ impl Amd64 {
                 let offset = Amd64::get_arg(&mut state, 1)?;
                 let origin = Amd64::get_arg(&mut state, 2)?;
 
-                let result = state
-                    .platform_mut()
+                let result = platform_mut(&mut state)
                     .linux
                     .lseek(fd, offset as isize, origin)?;
 
@@ -405,15 +407,9 @@ impl Amd64 {
                 let fd = Amd64::get_arg(&mut state, 4)?;
                 let off = Amd64::get_arg(&mut state, 5)?;
 
-                let address = state.platform.as_mut().linux.mmap(
-                    &mut state.memory,
-                    addr,
-                    len,
-                    prot,
-                    flags,
-                    fd,
-                    off,
-                )?;
+                let address = (state.platform.any_mut().downcast_mut().unwrap() as &mut Amd64)
+                    .linux
+                    .mmap(&mut state.memory, addr, len, prot, flags, fd, off)?;
 
                 state.set_scalar("rax", &il::expr_const(address as u64, 64))?;
 
@@ -435,12 +431,9 @@ impl Amd64 {
                 let len = Amd64::get_arg(&mut state, 1)?;
                 let prot = Amd64::get_arg(&mut state, 2)?;
 
-                let result =
-                    state
-                        .platform
-                        .as_mut()
-                        .linux
-                        .mprotect(&mut state.memory, addr, len, prot)?;
+                let result = (state.platform.any_mut().downcast_mut().unwrap() as &mut Amd64)
+                    .linux
+                    .mprotect(&mut state.memory, addr, len, prot)?;
 
                 state.set_scalar("rax", &il::expr_const(result as u64, 64))?;
 
@@ -463,7 +456,9 @@ impl Amd64 {
                     .get_string(filename_address)?
                     .ok_or("Could not get filename for open")?;
 
-                let result = state.platform_mut().linux.open(&filename, flags, mode)?;
+                let result = platform_mut(&mut state)
+                    .linux
+                    .open(&filename, flags, mode)?;
 
                 trace!("open for \"{}\" was {}", filename, result as i64);
 
@@ -476,7 +471,7 @@ impl Amd64 {
                 let buf = Amd64::get_arg(&mut state, 1)?;
                 let count = Amd64::get_arg(&mut state, 2)?;
 
-                let result = state.platform_mut().linux.read(fd, count)?;
+                let result = platform_mut(&mut state).linux.read(fd, count)?;
 
                 if let Some(bytes) = result {
                     for i in 0..bytes.len() {
@@ -576,8 +571,7 @@ impl Amd64 {
                         .collect::<Vec<u8>>();
 
                     let byte_string: String = String::from_utf8(byte_string).chain_err(|| {
-                        "Failed to convert bytes to string for \
-                                       write to stdout/stderr"
+                        "Failed to convert bytes to string for write to stdout/stderr"
                     })?;
 
                     trace!("write {} 0x{:x} {}: {}", fd, buf, len, byte_string);
@@ -587,17 +581,10 @@ impl Amd64 {
                 let bytes: ::std::result::Result<Vec<il::Expression>, Error> = (0..len)
                     .into_iter()
                     .try_fold(Vec::new(), |mut bytes, offset| {
-                        fn get<P: Platform<P>>(
-                            state: &State<P>,
-                            address: u64,
-                        ) -> Result<il::Expression> {
+                        fn get(state: &State, address: u64) -> Result<il::Expression> {
                             state.memory().load(address, 8)?.ok_or(
-                                format!(
-                                    "Value for write was None \
-                                                    address=0x{:08x}",
-                                    address
-                                )
-                                .into(),
+                                format!("Value for write was None address=0x{:08x}", address)
+                                    .into(),
                             )
                         }
 
@@ -610,7 +597,7 @@ impl Amd64 {
                     Err(_) => bail!("Failed to get bytes for write system call"),
                 };
 
-                let result = state.platform_mut().linux.write(fd, bytes)?;
+                let result = platform_mut(&mut state).linux.write(fd, bytes)?;
 
                 state.set_scalar("rax", &il::expr_const(result, 64))?;
 
@@ -705,20 +692,30 @@ impl Amd64 {
     }
 }
 
-impl Platform<Amd64> for Amd64 {
-    fn intrinsic(state: State<Amd64>, intrinsic: &il::Intrinsic) -> Result<Vec<Successor<Amd64>>> {
-        Amd64::intrinsic(state, intrinsic)
+impl Platform for Amd64 {
+    fn get_intrinsic_handler(
+        &self,
+    ) -> fn(state: State, intrinsic: &il::Intrinsic) -> Result<Vec<Successor>> {
+        return Amd64::intrinsic;
     }
 
-    fn merge(&mut self, other: &Amd64, _: &il::Expression) -> Result<bool> {
-        if self == other {
+    fn merge(&mut self, other: &dyn Platform, _: &il::Expression) -> Result<bool> {
+        if self == other.as_any().downcast_ref().unwrap() {
             Ok(true)
         } else {
             Ok(false)
         }
     }
 
-    fn box_clone(&self) -> Box<Amd64> {
+    fn box_clone(&self) -> Box<dyn Platform> {
         Box::new(self.clone())
+    }
+
+    fn as_any(&self) -> &dyn Any {
+        self
+    }
+
+    fn any_mut(&mut self) -> &mut dyn Any {
+        self
     }
 }

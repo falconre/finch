@@ -3,23 +3,29 @@
 use crate::error::*;
 use crate::executor::{State, Successor};
 use falcon::il;
+use std::any::Any;
 use std::fmt::Debug;
 
 pub mod linux;
 
 /// Functionality required by all Platforms
-pub trait Platform<P: Platform<P>>: Clone + Debug {
+pub trait Platform: Debug {
     /// Execute an intrinsic instruction
-    fn intrinsic(state: State<P>, intrinsic: &il::Intrinsic) -> Result<Vec<Successor<P>>>;
+    fn get_intrinsic_handler(
+        &self,
+    ) -> fn(state: State, intrinsic: &il::Intrinsic) -> Result<Vec<Successor>>;
 
     /// Merge the other state into this state.
     ///
     /// Returns true if states were successfully merged, false if states could
     /// not be merged
-    fn merge(&mut self, other: &P, constraints: &il::Expression) -> Result<bool>;
+    fn merge(&mut self, other: &dyn Platform, constraints: &il::Expression) -> Result<bool>;
 
     /// Clone this `Platform` into a `Box<Platform>`
-    fn box_clone(&self) -> Box<P>;
+    fn box_clone(&self) -> Box<dyn Platform>;
+
+    fn as_any(&self) -> &dyn Any;
+    fn any_mut(&mut self) -> &mut dyn Any;
 }
 
 /// A Dummy platform that does nothing.
@@ -34,18 +40,32 @@ impl Dummy {
     pub fn new() -> Dummy {
         Dummy {}
     }
-}
 
-impl Platform<Dummy> for Dummy {
-    fn intrinsic(_: State<Dummy>, intrinsic: &il::Intrinsic) -> Result<Vec<Successor<Dummy>>> {
+    fn dummy_intrinsic(_state: State, intrinsic: &il::Intrinsic) -> Result<Vec<Successor>> {
         Err(format!("Unhandled intrinsic {}", intrinsic).into())
     }
+}
 
-    fn merge(&mut self, _: &Dummy, _: &il::Expression) -> Result<bool> {
+impl Platform for Dummy {
+    fn get_intrinsic_handler(
+        &self,
+    ) -> fn(state: State, intrinsic: &il::Intrinsic) -> Result<Vec<Successor>> {
+        return Dummy::dummy_intrinsic;
+    }
+
+    fn merge(&mut self, _: &dyn Platform, _: &il::Expression) -> Result<bool> {
         Ok(true)
     }
 
-    fn box_clone(&self) -> Box<Dummy> {
+    fn box_clone(&self) -> Box<dyn Platform> {
         Box::new(self.clone())
+    }
+
+    fn as_any(&self) -> &dyn Any {
+        self
+    }
+
+    fn any_mut(&mut self) -> &mut dyn Any {
+        self
     }
 }

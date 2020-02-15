@@ -7,6 +7,7 @@ use crate::platform::Platform;
 use byteorder::{BigEndian, WriteBytesExt};
 use falcon::loader::{ElfLinker, ElfLinkerBuilder, Loader};
 use falcon::{il, RC};
+use std::any::Any;
 use std::path::PathBuf;
 
 // const ARGV_STRING_LEN: u64 = 256;
@@ -66,7 +67,7 @@ pub struct Mips {
 impl Mips {
     /// Create a standard driver, set up with a MIPS Platform, and everything
     /// initialized.
-    pub fn standard_load(filename: &str, base_path: Option<PathBuf>) -> Result<Driver<Mips>> {
+    pub fn standard_load(filename: &str, base_path: Option<PathBuf>) -> Result<Driver> {
         let mut elf_linker = ElfLinkerBuilder::new(filename.into())
             .do_relocations(false)
             .just_interpreter(true);
@@ -118,7 +119,7 @@ impl Mips {
         ))
     }
 
-    fn initialize(mut state: State<Mips>, elf_linker: &ElfLinker) -> Result<State<Mips>> {
+    fn initialize(mut state: State, elf_linker: &ElfLinker) -> Result<State> {
         let environment = Environment::new()
             .command_line_argument(EnvironmentString::new_concrete("application_filename"))
             // .environment_variable(
@@ -165,10 +166,7 @@ impl Mips {
     }
 
     /// Handle an intrinsic instruction.
-    pub fn intrinsic(
-        mut state: State<Mips>,
-        intrinsic: &il::Intrinsic,
-    ) -> Result<Vec<Successor<Mips>>> {
+    pub fn intrinsic(mut state: State, intrinsic: &il::Intrinsic) -> Result<Vec<Successor>> {
         if intrinsic.mnemonic() == "rdhwr" {
             if intrinsic.arguments()[1].get_scalar().unwrap().name() == "$sp" {
                 state.set_scalar(
@@ -220,7 +218,7 @@ impl Mips {
         Ok(buf)
     }
 
-    fn get_register(state: &mut State<Mips>, name: &str) -> Result<u64> {
+    fn get_register(state: &mut State, name: &str) -> Result<u64> {
         Ok(state
             .eval_and_concretize(&il::expr_scalar(name, 32))?
             .ok_or(format!("Failed to get {}", name))?
@@ -228,7 +226,7 @@ impl Mips {
             .ok_or(format!("Failed to get value for {}", name))?)
     }
 
-    fn get_stack_arg(state: &mut State<Mips>, offset: i64) -> Result<u64> {
+    fn get_stack_arg(state: &mut State, offset: i64) -> Result<u64> {
         let sp = Mips::get_register(state, "$sp")? as i64;
         let address = (sp + offset) as u64;
         let value = state.memory().load(address, 32)?.ok_or(format!(
@@ -243,10 +241,14 @@ impl Mips {
     }
 
     /// Handle a system call.
-    pub fn syscall(mut state: State<Mips>) -> Result<Vec<Successor<Mips>>> {
+    pub fn syscall(mut state: State) -> Result<Vec<Successor>> {
         let syscall_num = state
             .eval_and_concretize(&il::expr_scalar("$v0", 32))?
             .ok_or("Failed to get syscall num in $v0")?;
+
+        fn platform_mut(state: &mut State) -> &mut Mips {
+            state.platform.as_mut().any_mut().downcast_mut().unwrap()
+        }
 
         match syscall_num.value_u64().unwrap() {
             SYSCALL_ACCESS => {
@@ -268,7 +270,7 @@ impl Mips {
                     }
                 };
 
-                let result = state.platform().linux.access(&filename, a1);
+                let result = platform_mut(&mut state).linux.access(&filename, a1);
 
                 trace!("access for \"{}\" was {}", filename, result as i64);
 
@@ -285,15 +287,14 @@ impl Mips {
                 let a0 = state
                     .eval_and_concretize(&il::expr_scalar("$a0", 32))?
                     .ok_or("Failed to get $a0 for brk systemcall")?;
-                let a0 = state.platform_mut().linux.brk(a0.value_u64().unwrap());
+                let a0 = platform_mut(&mut state).linux.brk(a0.value_u64().unwrap());
                 state.set_scalar("$v0", &il::expr_const(a0, 32))?;
                 state.set_scalar("$a3", &il::expr_const(0, 32))?;
                 Ok(vec![Successor::new(state, SuccessorType::FallThrough)])
             }
             SYSCALL_CLOSE => {
                 let a0 = Mips::get_register(&mut state, "$a0")?;
-                if state
-                    .platform_mut()
+                if platform_mut(&mut state)
                     .linux
                     .file_system_mut()
                     .close_fd(a0 as usize)
@@ -319,9 +320,13 @@ impl Mips {
                 let a0 = Mips::get_register(&mut state, "$a0")?;
                 let a1 = Mips::get_register(&mut state, "$a1")?;
 
-                match state.platform().linux.file_system().size_fd(a0 as usize) {
+                match platform_mut(&mut state)
+                    .linux
+                    .file_system()
+                    .size_fd(a0 as usize)
+                {
                     Some(size) => {
-                        let buf = state.platform_mut().fake_stat64(size)?;
+                        let buf = platform_mut(&mut state).fake_stat64(size)?;
                         for i in 0..buf.len() {
                             state
                                 .memory_mut()
@@ -378,8 +383,7 @@ impl Mips {
                 let a1 = Mips::get_register(&mut state, "$a1")?;
                 let a2 = Mips::get_register(&mut state, "$a2")?;
 
-                let result = state
-                    .platform_mut()
+                let result = platform_mut(&mut state)
                     .linux
                     .lseek(a0, (a1 as i32) as isize, a2)?;
 
@@ -400,15 +404,9 @@ impl Mips {
                 let stack0 = Mips::get_stack_arg(&mut state, 0x10)?;
                 let stack1 = Mips::get_stack_arg(&mut state, 0x14)?;
 
-                let address = state.platform.as_mut().linux.mmap(
-                    &mut state.memory,
-                    a0,
-                    a1,
-                    a2,
-                    a3,
-                    stack0,
-                    stack1,
-                )?;
+                let address = (state.platform.any_mut().downcast_mut().unwrap() as &mut Mips)
+                    .linux
+                    .mmap(&mut state.memory, a0, a1, a2, a3, stack0, stack1)?;
 
                 state.set_scalar("$v0", &il::expr_const(address as u64, 32))?;
                 state.set_scalar("$a3", &il::expr_const(0, 32))?;
@@ -431,12 +429,9 @@ impl Mips {
                 let a1 = Mips::get_register(&mut state, "$a1")?;
                 let a2 = Mips::get_register(&mut state, "$a2")?;
 
-                let result =
-                    state
-                        .platform
-                        .as_mut()
-                        .linux
-                        .mprotect(&mut state.memory, a0, a1, a2)?;
+                let result = (state.platform.any_mut().downcast_mut().unwrap() as &mut Mips)
+                    .linux
+                    .mprotect(&mut state.memory, a0, a1, a2)?;
 
                 state.set_scalar("$v0", &il::expr_const(result as u64, 32))?;
 
@@ -468,7 +463,7 @@ impl Mips {
                     }
                 };
 
-                let result = state.platform_mut().linux.open(&filename, a1, a2)?;
+                let result = platform_mut(&mut state).linux.open(&filename, a1, a2)?;
 
                 trace!("open for \"{}\" was {}", filename, result as i64);
 
@@ -499,7 +494,7 @@ impl Mips {
                     .value_u64()
                     .ok_or("Could not get value for a2")?;
 
-                let result = state.platform_mut().linux.read(a0, a2)?;
+                let result = platform_mut(&mut state).linux.read(a0, a2)?;
 
                 if let Some(bytes) = result {
                     for i in 0..bytes.len() {
@@ -656,10 +651,7 @@ impl Mips {
                 let bytes: ::std::result::Result<Vec<il::Expression>, Error> = (0..a2)
                     .into_iter()
                     .try_fold(Vec::new(), |mut bytes, offset| {
-                        fn get<P: Platform<P>>(
-                            state: &State<P>,
-                            address: u64,
-                        ) -> Result<il::Expression> {
+                        fn get(state: &State, address: u64) -> Result<il::Expression> {
                             state.memory().load(address, 8)?.ok_or(
                                 format!(
                                     "Value for write was None \
@@ -679,7 +671,7 @@ impl Mips {
                     Err(_) => bail!("Failed to get bytes for write system call"),
                 };
 
-                let result = state.platform_mut().linux.write(a0, bytes)?;
+                let result = platform_mut(&mut state).linux.write(a0, bytes)?;
 
                 state.set_scalar("$v0", &il::expr_const(result, 32))?;
                 if result as i64 >= 0 {
@@ -780,20 +772,30 @@ impl Mips {
     }
 }
 
-impl Platform<Mips> for Mips {
-    fn intrinsic(state: State<Mips>, intrinsic: &il::Intrinsic) -> Result<Vec<Successor<Mips>>> {
-        Mips::intrinsic(state, intrinsic)
+impl Platform for Mips {
+    fn get_intrinsic_handler(
+        &self,
+    ) -> fn(state: State, intrinsic: &il::Intrinsic) -> Result<Vec<Successor>> {
+        return Mips::intrinsic;
     }
 
-    fn merge(&mut self, other: &Mips, _: &il::Expression) -> Result<bool> {
-        if self == other {
+    fn merge(&mut self, other: &dyn Platform, _: &il::Expression) -> Result<bool> {
+        if self == other.as_any().downcast_ref().unwrap() {
             Ok(true)
         } else {
             Ok(false)
         }
     }
 
-    fn box_clone(&self) -> Box<Mips> {
+    fn box_clone(&self) -> Box<dyn Platform> {
         Box::new(self.clone())
+    }
+
+    fn as_any(&self) -> &dyn Any {
+        self
+    }
+
+    fn any_mut(&mut self) -> &mut dyn Any {
+        self
     }
 }

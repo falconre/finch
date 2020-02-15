@@ -1,27 +1,26 @@
 //! An implementation of the `TranslationMemory` trait for symbolic `State`.
 
 use crate::executor::State;
-use crate::platform::Platform;
 use falcon::memory::MemoryPermissions;
 use falcon::translator::TranslationMemory;
 use std::cell::RefCell;
 
 /// A wrapper around a symbolic `State` which implements the `TranslationMemory`
 /// trait.
-pub struct StateTranslator<P: Platform<P>> {
-    state: RefCell<State<P>>,
+pub struct StateTranslator {
+    state: RefCell<State>,
 }
 
-impl<P: Platform<P>> StateTranslator<P> {
+impl StateTranslator {
     /// Create a new `StateTranslator` from the given `State`.
-    pub fn new(state: State<P>) -> StateTranslator<P> {
+    pub fn new(state: State) -> StateTranslator {
         StateTranslator {
             state: RefCell::new(state),
         }
     }
 }
 
-impl<P: Platform<P>> TranslationMemory for StateTranslator<P> {
+impl TranslationMemory for StateTranslator {
     fn permissions(&self, address: u64) -> Option<MemoryPermissions> {
         self.state.borrow().memory().permissions(address)
     }
@@ -41,8 +40,8 @@ impl<P: Platform<P>> TranslationMemory for StateTranslator<P> {
     }
 }
 
-impl<P: Platform<P>> Into<State<P>> for StateTranslator<P> {
-    fn into(self) -> State<P> {
+impl Into<State> for StateTranslator {
+    fn into(self) -> State {
         self.state.into_inner()
     }
 }

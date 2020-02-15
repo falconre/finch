@@ -1,5 +1,4 @@
 use crate::error::*;
-use crate::platform::Platform;
 use finch::executor::{Driver, Memory, State};
 
 const MAX_DRIVER_MERGE: usize = 16;
@@ -9,11 +8,11 @@ const DRIVER_CULL_SIZE: usize = 32;
 /// has been hit.
 ///
 /// Collects drivers once they hit the desired address
-pub fn drive_to_address<P: Platform<P>>(
-    driver: Driver<P>,
+pub fn drive_to_address(
+    driver: Driver,
     target_address: u64,
     max_steps: usize,
-) -> Result<Vec<Driver<P>>> {
+) -> Result<Vec<Driver>> {
     let mut drivers = vec![driver];
     let mut final_drivers = Vec::new();
 
@@ -70,7 +69,7 @@ pub fn drive_to_address<P: Platform<P>>(
     }
 }
 
-pub fn merge_drivers<P: Platform<P>>(drivers: Vec<Driver<P>>) -> Result<Driver<P>> {
+pub fn merge_drivers(drivers: Vec<Driver>) -> Result<Driver> {
     if drivers.is_empty() {
         bail!("Tried to merge an empty vector of drivers");
     }

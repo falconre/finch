@@ -241,56 +241,6 @@ impl Memory {
         Ok(())
     }
 
-    /*
-
-        pub fn store(&mut self, address: u64, value: ExpressionHash) -> Result<()> {
-            match self.endian {
-                Endian::Big => {
-                    if value.bits() == 8 {
-                        self.store_byte(address, value);
-                    }
-                    else {
-                        for i in 0..(value.bits() / 8) {
-                            let byte =
-                                if i == 0 {
-                                    value.clone().trun(8)
-                                }
-                                else {
-                                    value.clone()
-                                        .shr(ExpressionHash::constant(i as u64 * 8, value.bits()))
-                                        .trun(8)
-                                };
-                            let a = address + (((value.bits() / 8) - 1) - i) as u64;
-                            self.store_byte(a, byte);
-                        }
-                    }
-                },
-                Endian::Little => {
-                    if value.bits() == 8 {
-                        self.store_byte(address, value);
-                    }
-                    else {
-                        for i in 0..(value.bits() / 8) {
-                            let byte =
-                                if i == 0 {
-                                    value.clone().trun(8)
-                                }
-                                else {
-                                    value.clone()
-                                        .shr(ExpressionHash::constant(i as u64 * 8, value.bits()))
-                                        .trun(8)
-                                };
-                            let a = address + i as u64;
-                            self.store_byte(a, byte);
-                        }
-                    }
-                }
-            }
-            Ok(())
-        }
-
-    */
-
     pub fn load(&self, address: u64, bits: usize) -> Result<Option<il::Expression>> {
         match self.endian {
             Endian::Big => {
