@@ -372,10 +372,15 @@ impl Environment {
         initial_stack_size *= 8; // multiply by word size
 
         // a little padding never hurt anyone.
-        let strings_offset = initial_stack_size + 4 * 8;
+        let strings_offset = initial_stack_size + 16 * 8;
 
         let mut stack_address = stack_address;
         let mut strings_address = stack_address + strings_offset as u64;
+
+        // Make sure we have valid memory for stack
+        for address in stack_address..(stack_address + 4096) {
+            memory.store(address, &il::expr_const(0, 8))?;
+        }
 
         // push argc
         push(
@@ -517,6 +522,8 @@ impl Environment {
         // state.memory_mut().store(0xbff0005c, &il::expr_const(elf.program_entry(), 32))?;
 
         // 0xbff00060 AT_NULL (0x0)
+        push(&mut memory, &mut stack_address, &il::expr_const(0, 64))?;
+        push(&mut memory, &mut stack_address, &il::expr_const(0, 64))?;
         push(&mut memory, &mut stack_address, &il::expr_const(0, 64))?;
         push(&mut memory, &mut stack_address, &il::expr_const(0, 64))?;
         // state.memory_mut().store(0xbff00060, &il::expr_const(0, 32))?;

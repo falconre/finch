@@ -4,13 +4,14 @@ use crate::error::*;
 use crate::executor::Memory;
 use crate::platform::linux::{Constants, FileSystem, Whence};
 use falcon::il;
-use falcon::loader::ElfLinker;
+use falcon::loader::{ElfLinker, Loader};
 use falcon::memory::MemoryPermissions;
-use goblin;
 use std::path::PathBuf;
 
 const BRK_MAX_SIZE: u64 = 0x1000_0000;
 const MMAP_BASE: u64 = 0x6800_0000;
+
+const AT_FDCWD: u32 = 0xFFFF_FF9C;
 
 /// A basic model of the Linux Operating System.
 #[derive(Clone, Debug, Eq, PartialEq, Serialize)]
@@ -35,21 +36,19 @@ impl Linux {
         constants: &'static Constants,
     ) -> Result<Linux> {
         // We need to find the address after the "data" segment to start the
-        // program break... really just the last address in the binary that was
-        // loaded.
-        let elf = elf_linker.get_elf()?;
-        // find the highest address in a phdr of type PT_LOAD
-        let mut address = elf.elf().program_headers.iter().fold(0, |address, phdr| {
-            if phdr.p_type == goblin::elf::program_header::PT_LOAD
-                && phdr.p_vaddr + phdr.p_memsz > address
-            {
-                phdr.p_vaddr + phdr.p_memsz
-            } else {
-                address
-            }
-        });
+        // program break... really just the highest address we can find
+        let backing = elf_linker.memory()?;
 
-        address = address + elf.base_address();
+        let mut address: u64 = 0;
+
+        for (section_address, section) in backing.sections() {
+            let high = section_address + section.len() as u64;
+            if high > address {
+                address = high;
+            }
+        }
+
+        trace!("brk set to 0x{:x}", address);
 
         Ok(Linux {
             brk_base: address,
@@ -77,17 +76,24 @@ impl Linux {
         }
     }
 
-    pub fn brk(&mut self, address: u64) -> u64 {
+    pub fn brk(&mut self, address: u64, memory: &mut Memory) -> Result<u64> {
         let result = if address < self.brk_address {
             self.brk_address
         } else if address - self.brk_base < BRK_MAX_SIZE {
+            let size = address - self.brk_base;
+            trace!(
+                "brk is mapping more memory address=0x{:x} size=0x{:x}",
+                self.brk_address,
+                size
+            );
+            memory.initialize_blank(self.brk_address, size)?;
             self.brk_address = address;
             address
         } else {
             self.brk_address
         };
         trace!("brk(0x{:x}) = 0x{:x}", address, result);
-        result
+        Ok(result)
     }
 
     pub fn lseek(&mut self, fd: u64, offset: isize, whence: u64) -> Result<u64> {
@@ -220,6 +226,13 @@ impl Linux {
                 .map(|fd| fd as u64)
                 .unwrap_or(-1i64 as u64))
         }
+    }
+
+    pub fn openat(&mut self, dirfd: u64, path: &str, flags: u64, mode: u64) -> Result<u64> {
+        if dirfd as u32 != AT_FDCWD {
+            bail!("openat not implemented for dirfd!=AT_FDCWD")
+        }
+        return self.open(path, flags, mode);
     }
 
     pub fn read(&mut self, fd: u64, length: u64) -> Result<Option<Vec<il::Expression>>> {

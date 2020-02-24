@@ -287,7 +287,11 @@ impl Mips {
                 let a0 = state
                     .eval_and_concretize(&il::expr_scalar("$a0", 32))?
                     .ok_or("Failed to get $a0 for brk systemcall")?;
-                let a0 = platform_mut(&mut state).linux.brk(a0.value_u64().unwrap());
+
+                let a0 = (state.platform.any_mut().downcast_mut().unwrap() as &mut Mips)
+                    .linux
+                    .brk(a0.value_u64().unwrap(), &mut state.memory)?;
+
                 state.set_scalar("$v0", &il::expr_const(a0, 32))?;
                 state.set_scalar("$a3", &il::expr_const(0, 32))?;
                 Ok(vec![Successor::new(state, SuccessorType::FallThrough)])

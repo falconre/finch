@@ -23,12 +23,15 @@ const SYSCALL_CLOSE: u64 = 3;
 const SYSCALL_EXIT_GROUP: u64 = 231;
 const SYSCALL_FSTAT: u64 = 5;
 const SYSCALL_FUTEX: u64 = 202;
+const SYSCALL_GETCWD: u64 = 79;
 const SYSCALL_GETPID: u64 = 39;
 const SYSCALL_GETRLIMIT: u64 = 97;
 const SYSCALL_LSEEK: u64 = 8;
+const SYSCALL_LSTAT: u64 = 6;
 const SYSCALL_MMAP: u64 = 9;
 const SYSCALL_MPROTECT: u64 = 10;
 const SYSCALL_OPEN: u64 = 2;
+const SYSCALL_OPENAT: u64 = 257;
 const SYSCALL_READ: u64 = 0;
 const SYSCALL_RT_SIGACTION: u64 = 13;
 const SYSCALL_RT_SIGPROCMASK: u64 = 14;
@@ -128,7 +131,7 @@ impl Amd64 {
             .environment_variable(EnvironmentString::new_concrete("LD_BIND_NOW=1"))
             .environment_variable(EnvironmentString::new_concrete("LD_DEBUG=all"))
             .environment_variable(EnvironmentString::new_concrete(
-                "LD_LIBRARY_PATH=/usr/lib:/lib64",
+                "LD_LIBRARY_PATH=/usr/lib:/lib64/:lib/x86_64-linux-gnu",
             ))
             .environment_variable(EnvironmentString::new_concrete("LOCALDOMAIN=localdomain"));
 
@@ -205,7 +208,13 @@ impl Amd64 {
                     state.set_scalar("rcx", &il::expr_const(0, 64))?;
                     state.set_scalar("rdx", &il::expr_const(0, 64))?;
                 }
-                _ => bail!("Unhandled cpuid rax={}", rax),
+                0x80000000 => {
+                    state.set_scalar("rax", &il::expr_const(0, 64))?;
+                    state.set_scalar("rbx", &il::expr_const(0, 64))?;
+                    state.set_scalar("rcx", &il::expr_const(0, 64))?;
+                    state.set_scalar("rdx", &il::expr_const(0, 64))?;
+                }
+                _ => bail!("Unhandled cpuid rax=0x{:x}", rax),
             };
             Ok(vec![Successor::new(state, SuccessorType::FallThrough)])
         } else if intrinsic.mnemonic() == "rdtsc" {
@@ -278,6 +287,8 @@ impl Amd64 {
             state.platform.as_mut().any_mut().downcast_mut().unwrap()
         }
 
+        trace!("syscall {}", syscall_num.value_u64().unwrap());
+
         match syscall_num.value_u64().unwrap() {
             SYSCALL_ACCESS => {
                 let filename_address = Amd64::get_arg(&mut state, 0)?;
@@ -298,9 +309,13 @@ impl Amd64 {
             }
             SYSCALL_BRK => {
                 let brk = Amd64::get_arg(&mut state, 0)?;
-                let result = platform_mut(&mut state).linux.brk(brk);
-                trace!("brk set to 0x{:x}", result);
-                state.set_scalar("rax", &il::expr_const(result, 64))?;
+
+                let address = (state.platform.any_mut().downcast_mut().unwrap() as &mut Amd64)
+                    .linux
+                    .brk(brk, &mut state.memory)?;
+
+                trace!("brk set to 0x{:x}", address);
+                state.set_scalar("rax", &il::expr_const(address, 64))?;
                 Ok(vec![Successor::new(state, SuccessorType::FallThrough)])
             }
             SYSCALL_CLOSE => {
@@ -358,6 +373,21 @@ impl Amd64 {
             SYSCALL_GETPID => {
                 trace!("getpid");
                 state.set_scalar("rax", &il::expr_const(DEFAULT_PID, 64))?;
+                Ok(vec![Successor::new(state, SuccessorType::FallThrough)])
+            }
+            SYSCALL_GETCWD => {
+                let path = Amd64::get_arg(&mut state, 0)?;
+                let len = Amd64::get_arg(&mut state, 1)?;
+
+                if len < 2 {
+                    state.set_scalar("rax", &il::expr_const(0xffffffff_ffffffff, 64))?;
+                } else {
+                    // 0x47 = '/'
+                    state.memory_mut().store(path, &il::expr_const(0x47, 8))?;
+                    state.memory_mut().store(path + 1, &il::expr_const(0, 8))?;
+                    state.set_scalar("rax", &il::expr_const(path, 64))?;
+                }
+
                 Ok(vec![Successor::new(state, SuccessorType::FallThrough)])
             }
             SYSCALL_GETRLIMIT => {
@@ -466,6 +496,26 @@ impl Amd64 {
 
                 Ok(vec![Successor::new(state, SuccessorType::FallThrough)])
             }
+            SYSCALL_OPENAT => {
+                let dirfd = Amd64::get_arg(&mut state, 0)?;
+                let path = Amd64::get_arg(&mut state, 1)?;
+                let flags = Amd64::get_arg(&mut state, 2)?;
+                let mode = Amd64::get_arg(&mut state, 3)?;
+
+                let filename = state
+                    .get_string(path)?
+                    .ok_or("Could not get path for openat")?;
+
+                let result = platform_mut(&mut state)
+                    .linux
+                    .openat(dirfd, &filename, flags, mode)?;
+
+                trace!("openat for \"{}\" was {}", filename, result as i64);
+
+                state.set_scalar("rax", &il::expr_const(result, 64))?;
+
+                Ok(vec![Successor::new(state, SuccessorType::FallThrough)])
+            }
             SYSCALL_READ => {
                 let fd = Amd64::get_arg(&mut state, 0)?;
                 let buf = Amd64::get_arg(&mut state, 1)?;
@@ -477,7 +527,7 @@ impl Amd64 {
                     for i in 0..bytes.len() {
                         state.memory_mut().store(buf + (i as u64), &bytes[i])?;
                     }
-                    state.set_scalar("rax", &il::expr_const(0, 64))?;
+                    state.set_scalar("rax", &il::expr_const(bytes.len() as u64, 64))?;
                 } else {
                     state.set_scalar("rax", &il::expr_const(-1i64 as u64, 64))?;
                 }
@@ -517,7 +567,7 @@ impl Amd64 {
                 state.set_scalar("$rax", &il::expr_const(0 as u64, 64))?;
                 Ok(vec![Successor::new(state, SuccessorType::FallThrough)])
             }
-            SYSCALL_STAT => {
+            SYSCALL_LSTAT | SYSCALL_STAT => {
                 let filename_address = Amd64::get_arg(&mut state, 0)?;
                 let path = state
                     .get_string(filename_address)?
@@ -537,10 +587,10 @@ impl Amd64 {
                     state.memory_mut().store(buf + i, &il::expr_const(0, 8))?;
                 }
 
-                // This fakes a linux kernel 3 something
+                // This fakes a linux kernel 4 something
                 state
                     .memory_mut()
-                    .store(buf + (65 * 2), &il::expr_const(0x33, 8))?;
+                    .store(buf + (65 * 2), &il::expr_const(0x34, 8))?;
 
                 state.set_scalar("rax", &il::expr_const(0, 64))?;
 
@@ -645,11 +695,6 @@ impl Amd64 {
                         ))?
                         .value_u64()
                         .unwrap();
-
-                    println!(
-                        "iovec_address: 0x{:x}, iovec_length: 0x{:x}",
-                        iovec_address, iovec_length
-                    );
 
                     let bytes = state
                         .memory()

@@ -12,9 +12,9 @@ edition = "2018"
 byteorder = "1.3"
 clap = "2.33"
 error-chain = "0.12"
-falcon = "0.4.10"
+falcon = "0.4.11"
 falcon_capstone = "0.4.0"
-falcon-z3 = "0.4.10"
+falcon-z3 = "0.4.11"
 goblin = "0.2"
 lazy_static = "1.4"
 log = "0.4"
@@ -24,7 +24,7 @@ rustyline = "6.0.0"
 serde = "1.0"
 serde_derive = "1.0"
 simplelog = "0.7"
-#unicorn = { git="https://github.com/endeav0r/unicorn-rs" }
+unicorn = "0.9.1"
 
 [lib]
 name = "finch"
@@ -36,3 +36,6 @@ path = "src/main.rs"
 
 [features]
 capstone4 = ["falcon/capstone4"]
+
+[profile.release]
+debug = 2

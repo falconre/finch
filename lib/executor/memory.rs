@@ -80,6 +80,15 @@ impl Memory {
         self.backing = backing;
     }
 
+    /// Used by platforms to give a process more memory
+    pub fn initialize_blank(&mut self, address: u64, length: u64) -> Result<()> {
+        let zero = il::expr_const(0, 8);
+        for i in 0..length {
+            self.store(address + i, &zero)?;
+        }
+        Ok(())
+    }
+
     pub fn set_permissions(
         &mut self,
         address: u64,

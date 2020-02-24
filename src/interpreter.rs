@@ -80,50 +80,50 @@ named!(parse_delete<&str, Command>, alt!(
 ));
 
 named!(parse_command <&str, Command>, alt!(
-        tuple!(
-            alt!(tag!("breakpoint") | tag!("b")),
-            take_while1!(is_space),
-            parse_u64
-        ) => { |(_, _, address)| 
-            Command::AddBreakpoint(address)
-        } |
+    tuple!(
+        alt!(tag!("breakpoint") | tag!("b")),
+        take_while1!(is_space),
+        parse_u64
+    ) => { |(_, _, address)|
+        Command::AddBreakpoint(address)
+    } |
 
-        tuple!(
-            alt!( tag!("continue") | tag!("c")),
-            take_while1!(is_space),
-            parse_u64
-        ) => { |(_, _, address)| 
-            Command::Continue(address as usize)
-        } |
+    tuple!(
+        alt!( tag!("continue") | tag!("c")),
+        take_while1!(is_space),
+        parse_u64
+    ) => { |(_, _, address)|
+        Command::Continue(address as usize)
+    } |
 
-        tag!("cull") => { |_| Command::CullDrivers } |
+    tag!("cull") => { |_| Command::CullDrivers } |
 
-        tuple!(
-            alt!(tag!("delete") | tag!("d")),
-            take_while1!(is_space),
-            parse_delete
-        ) => {|(_, _, command)| command } |
+    tuple!(
+        alt!(tag!("delete") | tag!("d")),
+        take_while1!(is_space),
+        parse_delete
+    ) => {|(_, _, command)| command } |
 
-        tag!("flatten") => { |_| Command::Flatten } |
+    tag!("flatten") => { |_| Command::Flatten } |
 
-        alt!(tag!("help") | tag!("h")) => { |_| Command::Help } |
+    alt!(tag!("help") | tag!("h")) => { |_| Command::Help } |
 
-        tuple!(
-            alt!(tag!("info") | tag!("i")),
-            take_while1!(is_space),
-            parse_info
-        ) => { |(_, _, command)| command } |
-        
-        tuple!(
-            alt!(tag!("killpoint") | tag!("k")),
-            take_while1!(is_space),
-            parse_u64
-        ) => { |(_, _, address)| 
-            Command::AddKillPoint(address)
-        } |
+    tuple!(
+        alt!(tag!("info") | tag!("i")),
+        take_while1!(is_space),
+        parse_info
+    ) => { |(_, _, command)| command } |
 
-        alt!(tag!("quit") | tag!("q")) => { |_| Command::Quit }
-    ));
+    tuple!(
+        alt!(tag!("killpoint") | tag!("k")),
+        take_while1!(is_space),
+        parse_u64
+    ) => { |(_, _, address)|
+        Command::AddKillPoint(address)
+    } |
+
+    alt!(tag!("quit") | tag!("q")) => { |_| Command::Quit }
+));
 
 pub struct Interpreter {
     debugger: Debugger,

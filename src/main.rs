@@ -42,12 +42,16 @@ fn run2(driver: Driver, matches: &clap::ArgMatches) -> Result<()> {
         let mut interpreter = interpreter::Interpreter::new(debugger);
         interpreter.script(Path::new(debugger_script))
     } else {
-        let _driver = driver::drive_to_address(driver, 0xdeadbeef, 1)?
-            .get(0)
-            .unwrap()
-            .clone();
-        unimplemented!("unicorn testing");
-        // Ok(finch::unicorn_verify_amd64::step_with_unicorn(driver, 10000)?)
+        unimplemented!("Unicorn testing");
+        // let driver = driver::drive_to_address(driver, 0x1000, 1000000)?
+        //     .get(0)
+        //     .unwrap()
+        //     .clone();
+        // unimplemented!("unicorn testing");
+        // info!("Being unicorn testing");
+        // Ok(finch::unicorn_verify_amd64::step_with_unicorn(
+        //     driver, 100000,
+        // )?)
     }
 }
 
