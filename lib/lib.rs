@@ -1,15 +1,6 @@
 //! Finch: A Symbolic Executor Built With Falcon
-extern crate byteorder;
 #[macro_use]
 extern crate error_chain;
-extern crate falcon;
-extern crate falcon_capstone;
-extern crate falcon_z3;
-extern crate goblin;
-#[macro_use]
-extern crate lazy_static;
-#[macro_use]
-extern crate log;
 #[macro_use]
 extern crate serde_derive;
 // extern crate unicorn;

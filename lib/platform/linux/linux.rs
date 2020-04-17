@@ -6,6 +6,7 @@ use crate::platform::linux::{Constants, FileSystem, Whence};
 use falcon::il;
 use falcon::loader::{ElfLinker, Loader};
 use falcon::memory::MemoryPermissions;
+use log::trace;
 use std::path::PathBuf;
 
 const BRK_MAX_SIZE: u64 = 0x1000_0000;

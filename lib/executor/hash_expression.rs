@@ -3,6 +3,7 @@
 use crate::error::*;
 use crate::executor::simplify;
 use falcon::il;
+use lazy_static::lazy_static;
 use std::collections::HashMap;
 use std::sync::RwLock;
 

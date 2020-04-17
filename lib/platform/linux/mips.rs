@@ -7,6 +7,7 @@ use crate::platform::Platform;
 use byteorder::{BigEndian, WriteBytesExt};
 use falcon::loader::{ElfLinker, ElfLinkerBuilder, Loader};
 use falcon::{il, RC};
+use log::trace;
 use std::any::Any;
 use std::path::PathBuf;
 
