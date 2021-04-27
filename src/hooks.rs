@@ -42,3 +42,9 @@ impl Hooks {
         Ok(None)
     }
 }
+
+impl Default for Hooks {
+    fn default() -> Hooks {
+        Hooks::new()
+    }
+}

@@ -56,13 +56,13 @@ pub fn drive_to_address(
                 i += 1;
             }
         }
-        if drivers.len() == 0 {
+        if drivers.is_empty() {
             break;
         }
     }
 
     // TODO HACK for debugging
-    if final_drivers.len() == 0 {
+    if final_drivers.is_empty() {
         Ok(drivers)
     } else {
         Ok(final_drivers)

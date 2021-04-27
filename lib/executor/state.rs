@@ -499,7 +499,7 @@ impl State {
             il::Operation::Intrinsic { ref intrinsic } => {
                 self.platform.get_intrinsic_handler()(self, intrinsic)?
             }
-            il::Operation::Nop => vec![Successor::new(self, SuccessorType::FallThrough)],
+            il::Operation::Nop { .. } => vec![Successor::new(self, SuccessorType::FallThrough)],
         })
     }
 

@@ -64,7 +64,7 @@ impl Driver {
                         il::Operation::Assign { .. }
                         | il::Operation::Branch { .. }
                         | il::Operation::Intrinsic { .. }
-                        | il::Operation::Nop => None,
+                        | il::Operation::Nop { .. } => None,
                     }
                 } else {
                     None
