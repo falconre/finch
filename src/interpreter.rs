@@ -1,6 +1,5 @@
 use crate::debugger::Debugger;
 use crate::error::*;
-use rustyline;
 use std::fs::File;
 use std::io::Read;
 use std::path::Path;
@@ -33,17 +32,11 @@ fn map_decimal_u64(input: &str) -> ::std::result::Result<u64, ::std::num::ParseI
 }
 
 fn is_hex_digit(c: char) -> bool {
-    match c {
-        '0'..='9' | 'a'..='f' | 'A'..='F' => true,
-        _ => false,
-    }
+    matches!(c, '0'..='9' | 'a'..='f' | 'A'..='F')
 }
 
 fn is_decimal_digit(c: char) -> bool {
-    match c {
-        '0'..='9' => true,
-        _ => false,
-    }
+    matches!(c, '0'..='9')
 }
 
 named!(parse_hex_u64<&str, u64>, alt!(
@@ -63,10 +56,7 @@ named!(parse_u64<&str, u64>, alt!(
 ));
 
 fn is_space(c: char) -> bool {
-    match c {
-        ' ' | '\t' => true,
-        _ => false,
-    }
+    matches!(c, ' ' | '\t')
 }
 
 named!(parse_info<&str, Command>, alt!(
@@ -131,7 +121,7 @@ pub struct Interpreter {
 
 impl Interpreter {
     pub fn new(debugger: Debugger) -> Interpreter {
-        Interpreter { debugger: debugger }
+        Interpreter { debugger }
     }
 
     pub fn script(&mut self, filename: &Path) -> Result<()> {
@@ -141,7 +131,7 @@ impl Interpreter {
         file.read_to_string(&mut contents)?;
 
         for line in contents.lines() {
-            if line.len() == 0 {
+            if line.is_empty() {
                 continue;
             }
             let command = match parse_command(line) {

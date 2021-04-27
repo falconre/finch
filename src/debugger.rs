@@ -18,7 +18,7 @@ impl Debugger {
         Debugger {
             breakpoints: Vec::new(),
             breaked_drivers: Vec::new(),
-            drivers: drivers,
+            drivers,
             killpoints: Vec::new(),
             merge_points: Vec::new(),
             merged_drivers: HashMap::new(),

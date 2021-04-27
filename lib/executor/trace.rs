@@ -140,7 +140,7 @@ impl Trace {
                             items.push(item.clone());
                         }
                     }
-                    il::Operation::Branch { .. } | il::Operation::Nop => {}
+                    il::Operation::Branch { .. } | il::Operation::Nop { .. } => {}
                 }
             }
         }

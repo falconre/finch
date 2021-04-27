@@ -502,8 +502,8 @@ impl Mips {
                 let result = platform_mut(&mut state).linux.read(a0, a2)?;
 
                 if let Some(bytes) = result {
-                    for i in 0..bytes.len() {
-                        state.memory_mut().store(a1 + (i as u64), &bytes[i])?;
+                    for (i, byte) in bytes.iter().enumerate() {
+                        state.memory_mut().store(a1 + (i as u64), byte)?;
                     }
                     state.set_scalar("$v0", &il::expr_const(bytes.len() as u64, 32))?;
                     state.set_scalar("$a3", &il::expr_const(0, 32))?;
@@ -527,8 +527,8 @@ impl Mips {
 
                 trace!("rt_sigaction skipping");
 
-                state.set_scalar("$v0", &il::expr_const(0 as u64, 32))?;
-                state.set_scalar("$a3", &il::expr_const(0 as u64, 32))?;
+                state.set_scalar("$v0", &il::expr_const(0_u64, 32))?;
+                state.set_scalar("$a3", &il::expr_const(0_u64, 32))?;
 
                 Ok(vec![Successor::new(state, SuccessorType::FallThrough)])
             }
@@ -537,8 +537,8 @@ impl Mips {
 
                 trace!("rt_sigprocmask skipping");
 
-                state.set_scalar("$v0", &il::expr_const(0 as u64, 32))?;
-                state.set_scalar("$a3", &il::expr_const(0 as u64, 32))?;
+                state.set_scalar("$v0", &il::expr_const(0_u64, 32))?;
+                state.set_scalar("$a3", &il::expr_const(0_u64, 32))?;
 
                 Ok(vec![Successor::new(state, SuccessorType::FallThrough)])
             }
@@ -547,8 +547,8 @@ impl Mips {
 
                 trace!("set_robust_list skipping");
 
-                state.set_scalar("$v0", &il::expr_const(0 as u64, 32))?;
-                state.set_scalar("$a3", &il::expr_const(1 as u64, 32))?;
+                state.set_scalar("$v0", &il::expr_const(0_u64, 32))?;
+                state.set_scalar("$a3", &il::expr_const(1_u64, 32))?;
 
                 Ok(vec![Successor::new(state, SuccessorType::FallThrough)])
             }
@@ -557,8 +557,8 @@ impl Mips {
 
                 trace!("set_thread_area skipping");
 
-                state.set_scalar("$v0", &il::expr_const(0 as u64, 32))?;
-                state.set_scalar("$a3", &il::expr_const(0 as u64, 32))?;
+                state.set_scalar("$v0", &il::expr_const(0_u64, 32))?;
+                state.set_scalar("$a3", &il::expr_const(0_u64, 32))?;
 
                 Ok(vec![Successor::new(state, SuccessorType::FallThrough)])
             }
@@ -567,8 +567,8 @@ impl Mips {
 
                 trace!("set_tid_address skipping");
 
-                state.set_scalar("$v0", &il::expr_const(0 as u64, 32))?;
-                state.set_scalar("$a3", &il::expr_const(0 as u64, 32))?;
+                state.set_scalar("$v0", &il::expr_const(0_u64, 32))?;
+                state.set_scalar("$a3", &il::expr_const(0_u64, 32))?;
 
                 Ok(vec![Successor::new(state, SuccessorType::FallThrough)])
             }
@@ -657,14 +657,14 @@ impl Mips {
                     .into_iter()
                     .try_fold(Vec::new(), |mut bytes, offset| {
                         fn get(state: &State, address: u64) -> Result<il::Expression> {
-                            state.memory().load(address, 8)?.ok_or(
+                            state.memory().load(address, 8)?.ok_or_else(|| {
                                 format!(
                                     "Value for write was None \
                                                     address=0x{:08x}",
                                     address
                                 )
-                                .into(),
-                            )
+                                .into()
+                            })
                         }
 
                         bytes.push(get(&state, a1 + offset)?);
@@ -781,7 +781,7 @@ impl Platform for Mips {
     fn get_intrinsic_handler(
         &self,
     ) -> fn(state: State, intrinsic: &il::Intrinsic) -> Result<Vec<Successor>> {
-        return Mips::intrinsic;
+        Mips::intrinsic
     }
 
     fn merge(&mut self, other: &dyn Platform, _: &il::Expression) -> Result<bool> {

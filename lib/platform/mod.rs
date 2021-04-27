@@ -50,7 +50,7 @@ impl Platform for Dummy {
     fn get_intrinsic_handler(
         &self,
     ) -> fn(state: State, intrinsic: &il::Intrinsic) -> Result<Vec<Successor>> {
-        return Dummy::dummy_intrinsic;
+        Dummy::dummy_intrinsic
     }
 
     fn merge(&mut self, _: &dyn Platform, _: &il::Expression) -> Result<bool> {
@@ -67,5 +67,11 @@ impl Platform for Dummy {
 
     fn any_mut(&mut self) -> &mut dyn Any {
         self
+    }
+}
+
+impl Default for Dummy {
+    fn default() -> Dummy {
+        Dummy::new()
     }
 }
