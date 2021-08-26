@@ -117,6 +117,7 @@ fn run() -> Result<()> {
                 level_filter,
                 simplelog::Config::default(),
                 simplelog::TerminalMode::Mixed,
+                simplelog::ColorChoice::Auto,
             )
             .expect("Failed to initialize logging");
         }
