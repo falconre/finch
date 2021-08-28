@@ -93,7 +93,7 @@ impl Amd64 {
         let entry = elf_linker
             .get_interpreter()?
             .map(|elf| elf.base_address() + elf.elf().header.e_entry)
-            .unwrap_or(elf_linker.program_entry());
+            .unwrap_or_else(|| elf_linker.program_entry());
 
         let mut program = il::Program::new();
         let function = elf_linker.function(entry)?;
@@ -200,11 +200,11 @@ impl Amd64 {
                     // this says essentially that the cpu supports nothing.
                     state.set_scalar(
                         "rax",
-                        &il::expr_const(0b0000_00000000_0000_00_00_0000_0000_0000, 64),
+                        &il::expr_const(0b0000_0000_0000_0000_0000_0000_0000_0000, 64),
                     )?;
                     state.set_scalar(
                         "rbx",
-                        &il::expr_const(0b00000000_00000001_00000001_00000000, 64),
+                        &il::expr_const(0b0000_0000_0000_0001_0000_0001_0000_0000, 64),
                     )?;
                     state.set_scalar("rcx", &il::expr_const(0, 64))?;
                     state.set_scalar("rdx", &il::expr_const(0, 64))?;
@@ -350,10 +350,10 @@ impl Amd64 {
                 {
                     Some(size) => {
                         let buf = platform_mut(&mut state).fake_stat64(size)?;
-                        for i in 0..buf.len() {
+                        for (i, byte) in buf.iter().enumerate() {
                             state
                                 .memory_mut()
-                                .store(statbuf + i as u64, &il::expr_const(buf[i] as u64, 8))?;
+                                .store(statbuf + i as u64, &il::expr_const(*byte as u64, 8))?;
                         }
                         trace!("fstat for {} = 0, {}", fd, statbuf);
                         state.set_scalar("rax", &il::expr_const(0, 64))?;
@@ -381,7 +381,7 @@ impl Amd64 {
                 let len = Amd64::get_arg(&mut state, 1)?;
 
                 if len < 2 {
-                    state.set_scalar("rax", &il::expr_const(0xffffffff_ffffffff, 64))?;
+                    state.set_scalar("rax", &il::expr_const(0xffff_ffff_ffff_ffff, 64))?;
                 } else {
                     // 0x47 = '/'
                     state.memory_mut().store(path, &il::expr_const(0x47, 8))?;
@@ -525,8 +525,8 @@ impl Amd64 {
                 let result = platform_mut(&mut state).linux.read(fd, count)?;
 
                 if let Some(bytes) = result {
-                    for i in 0..bytes.len() {
-                        state.memory_mut().store(buf + (i as u64), &bytes[i])?;
+                    for (i, byte) in bytes.iter().enumerate() {
+                        state.memory_mut().store(buf + (i as u64), byte)?;
                     }
                     state.set_scalar("rax", &il::expr_const(bytes.len() as u64, 64))?;
                 } else {
@@ -545,27 +545,27 @@ impl Amd64 {
             }
             SYSCALL_RT_SIGACTION => {
                 trace!("rt_sigaction skipping");
-                state.set_scalar("rax", &il::expr_const(0 as u64, 64))?;
+                state.set_scalar("rax", &il::expr_const(0, 64))?;
                 Ok(vec![Successor::new(state, SuccessorType::FallThrough)])
             }
             SYSCALL_RT_SIGPROCMASK => {
                 trace!("rt_sigprocmask skipping");
-                state.set_scalar("rax", &il::expr_const(0 as u64, 64))?;
+                state.set_scalar("rax", &il::expr_const(0, 64))?;
                 Ok(vec![Successor::new(state, SuccessorType::FallThrough)])
             }
             SYSCALL_SET_ROBUST_LIST => {
                 trace!("set_robust_list skipping");
-                state.set_scalar("rax", &il::expr_const(0 as u64, 64))?;
+                state.set_scalar("rax", &il::expr_const(0, 64))?;
                 Ok(vec![Successor::new(state, SuccessorType::FallThrough)])
             }
             SYSCALL_SET_THREAD_AREA => {
                 trace!("set_thread_area skipping");
-                state.set_scalar("rax", &il::expr_const(0 as u64, 64))?;
+                state.set_scalar("rax", &il::expr_const(0, 64))?;
                 Ok(vec![Successor::new(state, SuccessorType::FallThrough)])
             }
             SYSCALL_SET_TID_ADDRESS => {
                 trace!("set_tid_address skipping");
-                state.set_scalar("$rax", &il::expr_const(0 as u64, 64))?;
+                state.set_scalar("$rax", &il::expr_const(0, 64))?;
                 Ok(vec![Successor::new(state, SuccessorType::FallThrough)])
             }
             SYSCALL_LSTAT | SYSCALL_STAT => {
@@ -633,12 +633,10 @@ impl Amd64 {
                     .into_iter()
                     .try_fold(Vec::new(), |mut bytes, offset| {
                         fn get(state: &State, address: u64) -> Result<il::Expression> {
-                            state.memory().load(address, 8)?.ok_or(
-                                format!("Value for write was None address=0x{:08x}", address)
-                                    .into(),
-                            )
+                            state.memory().load(address, 8)?.ok_or_else(|| {
+                                format!("Value for write was None address=0x{:08x}", address).into()
+                            })
                         }
-
                         bytes.push(get(&state, buf + offset)?);
                         Ok(bytes)
                     });
@@ -742,7 +740,7 @@ impl Platform for Amd64 {
     fn get_intrinsic_handler(
         &self,
     ) -> fn(state: State, intrinsic: &il::Intrinsic) -> Result<Vec<Successor>> {
-        return Amd64::intrinsic;
+        Amd64::intrinsic
     }
 
     fn merge(&mut self, other: &dyn Platform, _: &il::Expression) -> Result<bool> {

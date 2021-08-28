@@ -16,7 +16,7 @@ impl FileDescriptor {
     /// Create a new `FileDescriptor` with the given
     pub fn new<S: Into<String>>(fd: usize, path: S) -> FileDescriptor {
         FileDescriptor {
-            fd: fd,
+            fd,
             path: path.into(),
             offset: 0,
         }

@@ -48,77 +48,77 @@ impl ExpressionHash {
     }
 
     pub fn add(self, other: ExpressionHash) -> ExpressionHash {
-        ehbinop(self, other, |lhs, rhs| HashExpression::Add(lhs, rhs))
+        ehbinop(self, other, HashExpression::Add)
     }
 
     pub fn sub(self, other: ExpressionHash) -> ExpressionHash {
-        ehbinop(self, other, |lhs, rhs| HashExpression::Sub(lhs, rhs))
+        ehbinop(self, other, HashExpression::Sub)
     }
 
     pub fn mul(self, other: ExpressionHash) -> ExpressionHash {
-        ehbinop(self, other, |lhs, rhs| HashExpression::Mul(lhs, rhs))
+        ehbinop(self, other, HashExpression::Mul)
     }
 
     pub fn divu(self, other: ExpressionHash) -> ExpressionHash {
-        ehbinop(self, other, |lhs, rhs| HashExpression::Divu(lhs, rhs))
+        ehbinop(self, other, HashExpression::Divu)
     }
 
     pub fn modu(self, other: ExpressionHash) -> ExpressionHash {
-        ehbinop(self, other, |lhs, rhs| HashExpression::Modu(lhs, rhs))
+        ehbinop(self, other, HashExpression::Modu)
     }
 
     pub fn divs(self, other: ExpressionHash) -> ExpressionHash {
-        ehbinop(self, other, |lhs, rhs| HashExpression::Divs(lhs, rhs))
+        ehbinop(self, other, HashExpression::Divs)
     }
 
     pub fn mods(self, other: ExpressionHash) -> ExpressionHash {
-        ehbinop(self, other, |lhs, rhs| HashExpression::Mods(lhs, rhs))
+        ehbinop(self, other, HashExpression::Mods)
     }
 
     pub fn and(self, other: ExpressionHash) -> ExpressionHash {
-        ehbinop(self, other, |lhs, rhs| HashExpression::And(lhs, rhs))
+        ehbinop(self, other, HashExpression::And)
     }
 
     pub fn or(self, other: ExpressionHash) -> ExpressionHash {
-        ehbinop(self, other, |lhs, rhs| HashExpression::Or(lhs, rhs))
+        ehbinop(self, other, HashExpression::Or)
     }
 
     pub fn xor(self, other: ExpressionHash) -> ExpressionHash {
-        ehbinop(self, other, |lhs, rhs| HashExpression::Xor(lhs, rhs))
+        ehbinop(self, other, HashExpression::Xor)
     }
 
     pub fn shl(self, other: ExpressionHash) -> ExpressionHash {
-        ehbinop(self, other, |lhs, rhs| HashExpression::Shl(lhs, rhs))
+        ehbinop(self, other, HashExpression::Shl)
     }
 
     pub fn shl_const(self, bits: u64) -> ExpressionHash {
         let bits = ExpressionHash::constant(bits, self.bits());
-        ehbinop(self, bits, |lhs, rhs| HashExpression::Shl(lhs, rhs))
+        ehbinop(self, bits, HashExpression::Shl)
     }
 
     pub fn shr(self, other: ExpressionHash) -> ExpressionHash {
-        ehbinop(self, other, |lhs, rhs| HashExpression::Shr(lhs, rhs))
+        ehbinop(self, other, HashExpression::Shr)
     }
 
     pub fn shr_const(self, bits: u64) -> ExpressionHash {
         let bits = ExpressionHash::constant(bits, self.bits());
-        ehbinop(self, bits, |lhs, rhs| HashExpression::Shr(lhs, rhs))
+        ehbinop(self, bits, HashExpression::Shr)
     }
 
     pub fn cmpeq(self, other: ExpressionHash) -> ExpressionHash {
-        ehbinop(self, other, |lhs, rhs| HashExpression::Cmpeq(lhs, rhs))
+        ehbinop(self, other, HashExpression::Cmpeq)
     }
 
     pub fn cmpneq(self, other: ExpressionHash) -> ExpressionHash {
-        ehbinop(self, other, |lhs, rhs| HashExpression::Cmpneq(lhs, rhs))
+        ehbinop(self, other, HashExpression::Cmpneq)
     }
 
     pub fn cmplts(self, other: ExpressionHash) -> ExpressionHash {
-        ehbinop(self, other, |lhs, rhs| HashExpression::Cmplts(lhs, rhs))
+        ehbinop(self, other, HashExpression::Cmplts)
     }
 
     pub fn cmpltu(self, other: ExpressionHash) -> ExpressionHash {
-        ehbinop(self, other, |lhs, rhs| HashExpression::Cmpltu(lhs, rhs))
+        ehbinop(self, other, HashExpression::Cmpltu)
     }
 
     pub fn zext(self, bits: usize) -> ExpressionHash {
@@ -328,7 +328,7 @@ impl HashExpressionStore {
     }
 
     pub fn bits(&self, expression_hash: &ExpressionHash) -> Result<usize> {
-        match self.hash_to_expr[&expression_hash] {
+        match self.hash_to_expr[expression_hash] {
             HashExpression::Scalar(ref scalar) => Ok(scalar.bits()),
             HashExpression::Constant(ref constant) => Ok(constant.bits()),
             HashExpression::Add(ref lhs, _)
@@ -355,7 +355,7 @@ impl HashExpressionStore {
     }
 
     pub fn expression(&self, expression_hash: &ExpressionHash) -> Result<il::Expression> {
-        Ok(match self.hash_to_expr[&expression_hash] {
+        Ok(match self.hash_to_expr[expression_hash] {
             HashExpression::Scalar(ref scalar) => scalar.clone().into(),
             HashExpression::Constant(ref constant) => constant.clone().into(),
             HashExpression::Add(ref lhs, ref rhs) => {
@@ -498,7 +498,7 @@ impl HashExpressionStore {
     }
 
     fn get_hash_(&mut self, hash_expression: &HashExpression) -> ExpressionHash {
-        if let Some(hash) = self.expr_to_hash.get(&hash_expression) {
+        if let Some(hash) = self.expr_to_hash.get(hash_expression) {
             return hash.clone();
         }
 

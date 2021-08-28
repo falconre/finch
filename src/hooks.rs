@@ -35,7 +35,7 @@ impl Hooks {
 
     pub fn process(&self, driver: &Driver) -> Result<Option<Vec<Driver>>> {
         for hook in &self.hooks {
-            if let Some(drivers) = hook.process(&driver)? {
+            if let Some(drivers) = hook.process(driver)? {
                 return Ok(Some(drivers));
             }
         }

@@ -20,7 +20,7 @@ impl Page {
         Page {
             cells: HashMap::new(),
             permissions: None,
-            size: size,
+            size,
         }
     }
 
@@ -37,7 +37,7 @@ impl Page {
     }
 
     fn permissions(&self) -> Option<MemoryPermissions> {
-        self.permissions.clone()
+        self.permissions
     }
 }
 
@@ -53,7 +53,7 @@ impl Memory {
         Memory {
             pages: HashMap::new(),
             backing: None,
-            endian: endian.clone(),
+            endian,
         }
     }
 
@@ -61,7 +61,7 @@ impl Memory {
         Memory {
             pages: HashMap::new(),
             backing: Some(backing),
-            endian: endian.clone(),
+            endian,
         }
     }
 
@@ -104,7 +104,7 @@ impl Memory {
                 RC::make_mut(
                     self.pages
                         .entry(address + (i * PAGE_SIZE) as u64)
-                        .or_insert(RC::new(Page::new(PAGE_SIZE))),
+                        .or_insert_with(|| RC::new(Page::new(PAGE_SIZE))),
                 )
                 .set_permissions(permissions);
             }
@@ -120,7 +120,7 @@ impl Memory {
         let mut flattened: Vec<(u64, Vec<u8>, MemoryPermissions)> = Vec::new();
 
         // Find out which pages can be flattened
-        'pages_loop: for (address, _) in &self.pages {
+        'pages_loop: for address in self.pages.keys() {
             let mut page_bytes: Vec<u8> = Vec::new();
 
             for i in 0..PAGE_SIZE {
@@ -143,9 +143,7 @@ impl Memory {
             flattened.push((
                 *address,
                 page_bytes,
-                self.permissions(*address)
-                    .unwrap_or(MemoryPermissions::ALL)
-                    .clone(),
+                self.permissions(*address).unwrap_or(MemoryPermissions::ALL),
             ));
         }
 
@@ -173,7 +171,7 @@ impl Memory {
         RC::make_mut(
             self.pages
                 .entry(address & (!(PAGE_SIZE as u64 - 1)))
-                .or_insert(RC::new(Page::new(PAGE_SIZE))),
+                .or_insert_with(|| RC::new(Page::new(PAGE_SIZE))),
         )
         .set((address % PAGE_SIZE as u64) as usize, Some(byte));
     }
@@ -334,7 +332,7 @@ impl Memory {
     }
 
     pub fn merge(mut self, other: &Memory, constraints: &il::Expression) -> Result<Memory> {
-        let null_byte = il::expr_const(0, 8);
+        let null_byte = || il::expr_const(0, 8);
 
         for other_page in &other.pages {
             for i in 0..PAGE_SIZE {
@@ -344,8 +342,8 @@ impl Memory {
                 if other_byte != self_byte {
                     let expr = il::Expression::ite(
                         constraints.clone(),
-                        other_byte.unwrap_or(null_byte.clone()),
-                        self_byte.unwrap_or(null_byte.clone()),
+                        other_byte.unwrap_or_else(null_byte),
+                        self_byte.unwrap_or_else(null_byte),
                     )?;
                     self.store(address, &expr)?;
                 }
@@ -361,9 +359,10 @@ impl TranslationMemory for Memory {
         self.pages
             .get(&(address & (!(PAGE_SIZE as u64 - 1))))
             .and_then(|page| page.permissions())
-            .or(self
-                .backing()
-                .and_then(|backing| backing.permissions(address)))
+            .or_else(|| {
+                self.backing()
+                    .and_then(|backing| backing.permissions(address))
+            })
     }
 
     fn get_u8(&self, address: u64) -> Option<u8> {
