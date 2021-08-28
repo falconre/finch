@@ -22,8 +22,8 @@ pub struct Successor {
 impl Successor {
     pub(crate) fn new(state: State, type_: SuccessorType) -> Successor {
         Successor {
-            state: state,
-            type_: type_,
+            state,
+            type_,
         }
     }
 
@@ -38,9 +38,8 @@ impl Successor {
     }
 }
 
-/// Turn this `Successor` into its `State`, discarding the `SuccessorType`.
-impl Into<State> for Successor {
-    fn into(self) -> State {
-        self.state
+impl From<Successor> for State {
+    fn from(successor: Successor) -> State {
+        successor.state
     }
 }

@@ -25,10 +25,10 @@ impl Driver {
         architecture: RC<Box<dyn Architecture>>,
     ) -> Driver {
         Driver {
-            program: program,
-            location: location,
-            state: state,
-            architecture: architecture,
+            program,
+            location,
+            state,
+            architecture,
             trace: Trace::new(),
         }
     }
@@ -41,11 +41,11 @@ impl Driver {
         trace: Trace,
     ) -> Driver {
         Driver {
-            program: program,
-            location: location,
-            state: state,
-            architecture: architecture,
-            trace: trace,
+            program,
+            location,
+            state,
+            architecture,
+            trace,
         }
     }
 
@@ -53,7 +53,7 @@ impl Driver {
     pub fn step(mut self) -> Result<Vec<Driver>> {
         // Go ahead and set the trace location
         let index = {
-            let location = self.location.apply(&self.program()).unwrap();
+            let location = self.location.apply(self.program()).unwrap();
 
             let index: Option<il::Expression> =
                 if let Some(operation) = location.instruction().map(|i| i.operation()) {
@@ -165,19 +165,17 @@ impl Driver {
                                         .architecture
                                         .clone()
                                         .translator()
-                                        .translate_function(&state_translator, address)
-                                        .expect(&format!(
-                                            "Failed to lift function at 0x{:x}",
-                                            address
-                                        ));
+                                        .translate_function(&state_translator, address)?;
                                     let mut program = self.program.clone();
                                     program.add_function(function);
                                     let location =
                                         il::RefProgramLocation::from_address(&program, address)
-                                            .expect(&format!(
+                                            .ok_or_else(|| {
+                                                format!(
                                                 "Unable to get program location for address 0x{:x}",
                                                 address
-                                            ));
+                                            )
+                                            })?;
                                     drivers.push(Driver::new_full(
                                         program.clone(),
                                         location.into(),
@@ -233,7 +231,7 @@ impl Driver {
                         if let il::RefFunctionLocation::Edge(edge) = *location.function_location() {
                             if self
                                 .state
-                                .symbolize_and_eval(&edge.condition().clone().unwrap())?
+                                .symbolize_and_eval(edge.condition().unwrap())?
                                 .map(|constant| constant.is_one())
                                 .unwrap_or(false)
                             {
@@ -326,8 +324,8 @@ impl Driver {
     }
 }
 
-impl Into<State> for Driver {
-    fn into(self) -> State {
-        self.state
+impl From<Driver> for State {
+    fn from(driver: Driver) -> State {
+        driver.state
     }
 }

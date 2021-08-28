@@ -35,7 +35,7 @@ impl FileSystem {
         let mut fs = FileSystem {
             file_descriptors: HashMap::new(),
             files: HashMap::new(),
-            base_path: base_path,
+            base_path,
             next_fd: 0,
         };
 
@@ -50,7 +50,7 @@ impl FileSystem {
     fn get_path(&self, path: &str) -> PathBuf {
         match self.base_path {
             Some(ref base_path) => {
-                if path.starts_with("/") {
+                if path.starts_with('/') {
                     base_path.join(path.get(1..(path.len())).unwrap())
                 } else {
                     base_path.join(path)
@@ -198,7 +198,7 @@ impl FileSystem {
                 if self.next_fd == 0 {
                     break;
                 }
-                self.next_fd = self.next_fd - 1;
+                self.next_fd -= 1;
             }
             true
         } else {
@@ -215,7 +215,7 @@ impl FileSystem {
             }
         };
 
-        let bytes = fd.read(&self, length)?;
+        let bytes = fd.read(self, length)?;
         self.file_descriptors.insert(fd.fd(), fd);
 
         Ok(Some(bytes))

@@ -405,7 +405,7 @@ dependencies = [
 
 [[package]]
 name = "falcon-finch"
-version = "0.5.1"
+version = "0.5.2"
 dependencies = [
  "byteorder",
  "clap",

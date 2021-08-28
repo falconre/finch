@@ -54,7 +54,7 @@ impl Linux {
         Ok(Linux {
             brk_base: address,
             brk_address: address,
-            constants: constants,
+            constants,
             file_system: FileSystem::new(base_path)?,
             mmap_address: MMAP_BASE,
         })
@@ -113,6 +113,7 @@ impl Linux {
             .map(|off| off as u64)
     }
 
+    #[allow(clippy::too_many_arguments)]
     pub fn mmap(
         &mut self,
         memory: &mut Memory,
@@ -125,10 +126,8 @@ impl Linux {
     ) -> Result<u64> {
         let mut permissions: MemoryPermissions = MemoryPermissions::NONE;
 
-        if flags & self.constants.MAP_ANONYMOUS == 0 {
-            if !self.file_system.fd_valid(fd as usize) {
-                return Ok(-1i64 as u64);
-            }
+        if flags & self.constants.MAP_ANONYMOUS == 0 && !self.file_system.fd_valid(fd as usize) {
+            return Ok(-1i64 as u64);
         }
 
         if prot & self.constants.PROT_READ > 0 {
@@ -233,7 +232,7 @@ impl Linux {
         if dirfd as u32 != AT_FDCWD {
             bail!("openat not implemented for dirfd!=AT_FDCWD")
         }
-        return self.open(path, flags, mode);
+        self.open(path, flags, mode)
     }
 
     pub fn read(&mut self, fd: u64, length: u64) -> Result<Option<Vec<il::Expression>>> {

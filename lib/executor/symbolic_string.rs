@@ -9,6 +9,6 @@ pub struct SymbolicString {
 
 impl SymbolicString {
     pub fn new(bytes: Vec<ExpressionHash>) -> SymbolicString {
-        SymbolicString { bytes: bytes }
+        SymbolicString { bytes }
     }
 }

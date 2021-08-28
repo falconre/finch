@@ -30,7 +30,7 @@ impl EnvironmentString {
     pub fn new_symbolic<S: Into<String>>(name: S, length: usize) -> EnvironmentString {
         EnvironmentString::Symbolic {
             name: name.into(),
-            length: length,
+            length,
         }
     }
 
@@ -90,7 +90,7 @@ impl Environment {
             stack_address: &mut u64,
             value: &il::Expression,
         ) -> Result<()> {
-            memory.store(*stack_address, &value)?;
+            memory.store(*stack_address, value)?;
             *stack_address += 4;
             Ok(())
         }
@@ -208,10 +208,9 @@ impl Environment {
         // find the lowest address of a PT_LOAD phdr
         let mut base_address = 0x100000000;
         for phdr in elf.elf().program_headers {
-            if phdr.p_type == ::goblin::elf::program_header::PT_LOAD {
-                if phdr.p_vaddr < base_address {
-                    base_address = phdr.p_vaddr;
-                }
+            if phdr.p_type == ::goblin::elf::program_header::PT_LOAD && phdr.p_vaddr < base_address
+            {
+                base_address = phdr.p_vaddr;
             }
         }
 
@@ -315,7 +314,7 @@ impl Environment {
             stack_address: &mut u64,
             value: &il::Expression,
         ) -> Result<()> {
-            memory.store(*stack_address, &value)?;
+            memory.store(*stack_address, value)?;
             *stack_address += 8;
             Ok(())
         }
@@ -438,10 +437,9 @@ impl Environment {
         // find the lowest address of a PT_LOAD phdr
         let mut base_address = 0xffff_ffff_ffff_ffff;
         for phdr in elf.elf().program_headers {
-            if phdr.p_type == ::goblin::elf::program_header::PT_LOAD {
-                if phdr.p_vaddr < base_address {
-                    base_address = phdr.p_vaddr;
-                }
+            if phdr.p_type == ::goblin::elf::program_header::PT_LOAD && phdr.p_vaddr < base_address
+            {
+                base_address = phdr.p_vaddr;
             }
         }
 
@@ -530,5 +528,11 @@ impl Environment {
         // state.memory_mut().store(0xbff00064, &il::expr_const(0, 32))?;
 
         Ok(())
+    }
+}
+
+impl Default for Environment {
+    fn default() -> Environment {
+        Environment::new()
     }
 }

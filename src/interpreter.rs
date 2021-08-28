@@ -28,7 +28,7 @@ fn map_address(input: &str) -> ::std::result::Result<u64, ::std::num::ParseIntEr
 }
 
 fn map_decimal_u64(input: &str) -> ::std::result::Result<u64, ::std::num::ParseIntError> {
-    u64::from_str_radix(input, 10)
+    input.parse::<u64>()
 }
 
 fn is_hex_digit(c: char) -> bool {

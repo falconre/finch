@@ -16,9 +16,9 @@ impl TraceItem {
         address: Option<u64>,
     ) -> TraceItem {
         TraceItem {
-            index: index,
-            program_location: program_location,
-            address: address,
+            index,
+            program_location,
+            address,
         }
     }
 
@@ -29,7 +29,7 @@ impl TraceItem {
         &self.program_location
     }
     pub fn address(&self) -> Option<u64> {
-        self.address.clone()
+        self.address
     }
 }
 
@@ -77,7 +77,7 @@ impl Trace {
 
         scalars_read.insert(scalar.clone());
 
-        for item in self.items().into_iter().rev() {
+        for item in self.items().iter().rev() {
             let rpl = item.program_location().apply(program)?;
             if let Some(operation) = rpl.instruction().map(|i| i.operation()) {
                 match operation {
@@ -131,10 +131,10 @@ impl Trace {
                             })
                             .unwrap_or(false);
                         if cond {
-                            for scalar in intrinsic.scalars_written().unwrap_or(Vec::new()) {
+                            for scalar in intrinsic.scalars_written().unwrap_or_default() {
                                 scalars_read.remove(scalar);
                             }
-                            for scalar in intrinsic.scalars_read().unwrap_or(Vec::new()) {
+                            for scalar in intrinsic.scalars_read().unwrap_or_default() {
                                 scalars_read.insert(scalar.clone());
                             }
                             items.push(item.clone());
@@ -149,9 +149,15 @@ impl Trace {
 
         let trace = Trace {
             next_index: self.next_index,
-            items: items,
+            items,
         };
 
         Ok(trace)
+    }
+}
+
+impl Default for Trace {
+    fn default() -> Trace {
+        Trace::new()
     }
 }

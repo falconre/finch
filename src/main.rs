@@ -98,10 +98,9 @@ fn run() -> Result<()> {
 
     let filename = matches.value_of("filename").unwrap();
 
-    let base_path: Option<PathBuf> = match matches.value_of("base_path") {
-        Some(base_path) => Some(base_path.into()),
-        None => None,
-    };
+    let base_path: Option<PathBuf> = matches
+        .value_of("base_path")
+        .map(|base_path| base_path.into());
 
     if let Some(log_level) = matches.value_of("log") {
         let level_filter = match log_level {

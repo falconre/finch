@@ -86,13 +86,10 @@ pub fn simplify(expression: &il::Expression) -> Result<il::Expression> {
     fn eliminate_lower_bits(bits: usize, e: il::Expression) -> Result<il::Expression> {
         fn zext_eliminate(bits: usize, e: il::Expression) -> il::Expression {
             let e_bits = e.bits();
-            match e {
-                il::Expression::Zext(_, ref ze) => {
-                    if ze.bits() <= bits {
-                        return il::expr_const(0, e_bits);
-                    }
+            if let il::Expression::Zext(_, ref ze) = e {
+                if ze.bits() <= bits {
+                    return il::expr_const(0, e_bits);
                 }
-                _ => {}
             };
             e
         }
@@ -101,7 +98,7 @@ pub fn simplify(expression: &il::Expression) -> Result<il::Expression> {
             il::Expression::Or(lhs, rhs) => {
                 let lhs = zext_eliminate(bits, *lhs);
                 let rhs = zext_eliminate(bits, *rhs);
-                Ok(il::Expression::or(lhs.clone(), rhs.clone())?)
+                Ok(il::Expression::or(lhs, rhs)?)
             }
             _ => Ok(e.clone()),
         }
@@ -185,12 +182,9 @@ pub fn simplify(expression: &il::Expression) -> Result<il::Expression> {
         let expression = simplify(expression)?;
 
         // Get rid of nested zext(zext())
-        match expression {
-            il::Expression::Zext(_, expression) => {
-                return Ok(il::Expression::zext(bits, *expression)?)
-            }
-            _ => {}
-        };
+        if let il::Expression::Zext(_, expression) = expression {
+            return Ok(il::Expression::zext(bits, *expression)?);
+        }
 
         Ok(il::Expression::zext(bits, expression)?)
     }

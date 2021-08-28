@@ -36,8 +36,8 @@ impl State {
             scalars: HashMap::new(),
             path_constraints: Vec::new(),
             merged_constraints: Vec::new(),
-            memory: memory,
-            platform: platform,
+            memory,
+            platform,
             symbolic_strings: HashMap::new(),
             symbolic_memory_address: DEFAULT_SYMBOLIC_MEMORY_ADDRESS,
             next_expression_complexity_variable: 0,
@@ -107,7 +107,7 @@ impl State {
         self.next_expression_complexity_variable += 1;
 
         self.add_path_constraint(&il::Expression::cmpeq(
-            scalar_expression.clone().into(),
+            scalar_expression.clone(),
             expression,
         )?)?;
 
@@ -158,7 +158,7 @@ impl State {
         let expression_hash = HASH_EXPRESSION_STORE
             .write()
             .unwrap()
-            .get_hash(&constraint)?;
+            .get_hash(constraint)?;
         self.path_constraints.push(expression_hash);
         Ok(())
     }
@@ -232,7 +232,7 @@ impl State {
     pub fn symbolize_expression(&self, expression: &il::Expression) -> Result<il::Expression> {
         Ok(match *expression {
             il::Expression::Scalar(ref scalar) => match self.scalars.get(scalar.name()) {
-                Some(ref expression_hash) => HASH_EXPRESSION_STORE
+                Some(expression_hash) => HASH_EXPRESSION_STORE
                     .read()
                     .unwrap()
                     .expression(expression_hash)?,
@@ -332,9 +332,9 @@ impl State {
     /// Evaluates the expression to a single, concrete value
     pub fn eval(&self, expression: &il::Expression) -> Result<Option<il::Constant>> {
         if expression.all_constants() {
-            Ok(Some(eval(&expression)?))
+            Ok(Some(eval(expression)?))
         } else if self.merged_constraints.is_empty() {
-            Ok(solve(&self.path_constraints(), &expression)?)
+            Ok(solve(&self.path_constraints(), expression)?)
         }
         // If we have merged constraints, we need to assert that at least one
         // set of merged constraints is true
@@ -357,7 +357,7 @@ impl State {
                         il::Expression::ite(constraints, il::expr_const(1, 1), ite).unwrap()
                     });
 
-            Ok(solve(&vec![merged_constraints], &expression)?)
+            Ok(solve(&[merged_constraints], expression)?)
         }
     }
 
@@ -374,14 +374,11 @@ impl State {
             Ok(Some(eval(&expression)?))
         } else {
             let constant = self.symbolize_and_eval(&expression)?;
-            match constant {
-                Some(ref constant) => {
-                    self.add_path_constraint(&il::Expression::cmpeq(
-                        expression.clone(),
-                        constant.clone().into(),
-                    )?)?;
-                }
-                None => {}
+            if let Some(ref constant) = constant {
+                self.add_path_constraint(&il::Expression::cmpeq(
+                    expression,
+                    constant.clone().into(),
+                )?)?;
             }
             Ok(constant)
         }
@@ -397,7 +394,7 @@ impl State {
             Ok(eval(&expression)?.is_one())
         } else if self.merged_constraints.is_empty() {
             let mut constraints = self.path_constraints();
-            constraints.push(expression.clone());
+            constraints.push(expression);
 
             Ok(solve(&constraints, &il::expr_scalar("asisjelisf", 1))?.is_some())
         }
@@ -422,13 +419,9 @@ impl State {
                         il::Expression::ite(constraints, il::expr_const(1, 1), ite).unwrap()
                     });
 
-            let merged_constraints = il::Expression::and(expression.clone(), merged_constraints)?;
+            let merged_constraints = il::Expression::and(expression, merged_constraints)?;
 
-            Ok(solve(
-                &vec![merged_constraints],
-                &il::expr_scalar("lsdkfjsoeifjs", 1),
-            )?
-            .is_some())
+            Ok(solve(&[merged_constraints], &il::expr_scalar("lsdkfjsoeifjs", 1))?.is_some())
         }
     }
 
@@ -508,14 +501,14 @@ impl State {
     fn constraints_as_expression(&self) -> Result<il::Expression> {
         let path_constraints = self.path_constraints();
 
-        Ok(if path_constraints.len() == 0 {
+        Ok(if path_constraints.is_empty() {
             il::expr_const(1, 1)
         } else if path_constraints.len() == 1 {
             path_constraints[0].clone()
         } else {
             let mut expr = path_constraints[0].clone();
-            for i in 1..path_constraints.len() {
-                expr = il::Expression::and(expr, path_constraints[i].clone())?;
+            for path_constraint in path_constraints.iter().skip(1) {
+                expr = il::Expression::and(expr, path_constraint.clone())?;
             }
             expr
         })
@@ -653,7 +646,7 @@ impl State {
             bytes.push(byte.value_u64().unwrap() as u8);
         }
 
-        Ok(String::from_utf8(bytes).map(|s| Some(s)).unwrap_or(None))
+        Ok(String::from_utf8(bytes).map(Some).unwrap_or(None))
     }
 }
 

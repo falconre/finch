@@ -89,7 +89,7 @@ impl Mips {
         let entry = elf_linker
             .get_interpreter()?
             .map(|elf| elf.base_address() + elf.elf().header.e_entry)
-            .unwrap_or(elf_linker.program_entry());
+            .unwrap_or_else(|| elf_linker.program_entry());
 
         let mut program = il::Program::new();
         let function = elf_linker.function(entry)?;
@@ -332,10 +332,10 @@ impl Mips {
                 {
                     Some(size) => {
                         let buf = platform_mut(&mut state).fake_stat64(size)?;
-                        for i in 0..buf.len() {
+                        for (i, byte) in buf.iter().enumerate() {
                             state
                                 .memory_mut()
-                                .store(a1 + i as u64, &il::expr_const(buf[i] as u64, 8))?;
+                                .store(a1 + i as u64, &il::expr_const(*byte as u64, 8))?;
                         }
                         trace!("fstat64 for {} = 0, {}", a0, size);
                         state.set_scalar("$v0", &il::expr_const(0, 32))?;

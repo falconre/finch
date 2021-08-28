@@ -40,8 +40,8 @@ impl TranslationMemory for StateTranslator {
     }
 }
 
-impl Into<State> for StateTranslator {
-    fn into(self) -> State {
-        self.state.into_inner()
+impl From<StateTranslator> for State {
+    fn from(state_translator: StateTranslator) -> State {
+        state_translator.state.into_inner()
     }
 }
