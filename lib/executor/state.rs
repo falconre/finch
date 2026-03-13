@@ -146,8 +146,8 @@ impl State {
     /// Get the names of the scalars in this `State`.
     pub fn scalars(&self) -> Vec<String> {
         self.scalars
-            .iter()
-            .map(|(name, _)| name.to_string())
+            .keys()
+            .map(|name| name.to_string())
             .collect::<Vec<String>>()
     }
 
@@ -284,6 +284,10 @@ impl State {
                 self.symbolize_expression(rhs)?,
             )?,
             il::Expression::Shr(ref lhs, ref rhs) => il::Expression::shr(
+                self.symbolize_expression(lhs)?,
+                self.symbolize_expression(rhs)?,
+            )?,
+            il::Expression::AShr(ref lhs, ref rhs) => il::Expression::ashr(
                 self.symbolize_expression(lhs)?,
                 self.symbolize_expression(rhs)?,
             )?,
@@ -523,8 +527,8 @@ impl State {
         // merge all scalars
         for (name, scalar) in other
             .scalars
-            .iter()
-            .map(|(name, _)| (name, other.scalar(name).unwrap()))
+            .keys()
+            .map(|name| (name, other.scalar(name).unwrap()))
         {
             let e = if let Some(self_scalar) = self.scalar(name) {
                 if !self_scalar.all_constants() || self_scalar != scalar {
@@ -597,24 +601,13 @@ impl State {
     ///
     /// This is a null-terminated symbolic buffer.
     pub fn make_symbolic_string(&mut self, name: &str, length: usize) -> Result<u64> {
-        let (address, expressions) = self.make_symbolic_buffer(name, length - 1)?;
+        let (address, _) = self.make_symbolic_buffer(name, length - 1)?;
 
         let null_byte_address = self.next_symbolic_memory_address();
         self.memory
             .store(null_byte_address, &il::expr_const(0, 8))?;
 
-        let mut expression_hashes = Vec::new();
-
-        for expression in expressions {
-            expression_hashes.push(
-                HASH_EXPRESSION_STORE
-                    .write()
-                    .unwrap()
-                    .get_hash(&expression)?,
-            );
-        }
-
-        let symbolic_string = SymbolicString::new(expression_hashes);
+        let symbolic_string = SymbolicString::new();
 
         self.symbolic_strings
             .insert(name.to_string(), symbolic_string);

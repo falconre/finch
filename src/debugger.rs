@@ -174,22 +174,20 @@ impl Debugger {
             //             Ok(v)
             //         });
 
-            let drivers_ = temp_drivers.into_iter().try_fold(Vec::new(), |mut v, d| {
-                v.append(&mut d.step()?);
-                Ok(v)
-            });
+            let drivers_: Result<Vec<Driver>> =
+                temp_drivers.into_iter().try_fold(Vec::new(), |mut v, d| {
+                    v.append(&mut d.step()?);
+                    Ok(v)
+                });
 
-            drivers = match drivers_ {
-                Ok(drivers) => drivers,
-                Err(e) => return Err(e),
-            };
+            drivers = drivers_?;
 
-            let address = drivers.get(0).unwrap().address().unwrap_or(0);
+            let address = drivers.first().unwrap().address().unwrap_or(0);
 
             // if _i == 1645 {
             if address == 0x4000b343 {
                 use falcon::il;
-                let driver = drivers.get(0).unwrap();
+                let driver = drivers.first().unwrap();
                 let trace = driver.trace();
                 let sliced_trace =
                     trace.slice_backwards(&il::scalar("r14", 64), driver.program())?;
@@ -205,7 +203,7 @@ impl Debugger {
                 // panic!("11213");
             }
 
-            if let Some(driver) = drivers.get(0) {
+            if let Some(driver) = drivers.first() {
                 println!("{}", driver.location().apply(driver.program())?);
                 // use falcon::il;
                 // if let Some(instruction) = driver.instruction() {

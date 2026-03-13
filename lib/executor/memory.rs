@@ -12,15 +12,13 @@ pub const PAGE_SIZE: usize = 4096;
 pub struct Page {
     cells: HashMap<usize, Option<ExpressionHash>>,
     permissions: Option<MemoryPermissions>,
-    size: usize,
 }
 
 impl Page {
-    fn new(size: usize) -> Page {
+    fn new() -> Page {
         Page {
             cells: HashMap::new(),
             permissions: None,
-            size,
         }
     }
 
@@ -104,7 +102,7 @@ impl Memory {
                 RC::make_mut(
                     self.pages
                         .entry(address + (i * PAGE_SIZE) as u64)
-                        .or_insert_with(|| RC::new(Page::new(PAGE_SIZE))),
+                        .or_insert_with(|| RC::new(Page::new())),
                 )
                 .set_permissions(permissions);
             }
@@ -113,7 +111,7 @@ impl Memory {
     }
 
     pub fn backing(&self) -> Option<&backing::Memory> {
-        self.backing.as_ref().map(|b| RC::borrow(b))
+        self.backing.as_ref().map(RC::borrow)
     }
 
     pub fn flatten(&mut self) -> Result<()> {
@@ -156,8 +154,8 @@ impl Memory {
         }
 
         {
-            let mut backing = self.backing.as_mut().unwrap();
-            let backing = RC::make_mut(&mut backing);
+            let backing = self.backing.as_mut().unwrap();
+            let backing = RC::make_mut(backing);
 
             for (address, bytes, permissions) in flattened {
                 backing.set_memory(address, bytes, permissions);
@@ -171,7 +169,7 @@ impl Memory {
         RC::make_mut(
             self.pages
                 .entry(address & (!(PAGE_SIZE as u64 - 1)))
-                .or_insert_with(|| RC::new(Page::new(PAGE_SIZE))),
+                .or_insert_with(|| RC::new(Page::new())),
         )
         .set((address % PAGE_SIZE as u64) as usize, Some(byte));
     }
@@ -367,5 +365,202 @@ impl TranslationMemory for Memory {
 
     fn get_u8(&self, address: u64) -> Option<u8> {
         self.backing().and_then(|backing| backing.get8(address))
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use falcon::executor::eval;
+    use falcon::memory::MemoryPermissions;
+
+    #[test]
+    fn test_32bit_little_endian_byte_order() {
+        let mut mem = Memory::new(Endian::Little);
+        mem.store(0x1000, &il::expr_const(0xDEADBEEF, 32)).unwrap();
+
+        let b0 = mem.load(0x1000, 8).unwrap().unwrap();
+        let b1 = mem.load(0x1001, 8).unwrap().unwrap();
+        let b2 = mem.load(0x1002, 8).unwrap().unwrap();
+        let b3 = mem.load(0x1003, 8).unwrap().unwrap();
+
+        assert_eq!(eval(&b0).unwrap().value_u64().unwrap(), 0xEF);
+        assert_eq!(eval(&b1).unwrap().value_u64().unwrap(), 0xBE);
+        assert_eq!(eval(&b2).unwrap().value_u64().unwrap(), 0xAD);
+        assert_eq!(eval(&b3).unwrap().value_u64().unwrap(), 0xDE);
+    }
+
+    #[test]
+    fn test_32bit_big_endian_byte_order() {
+        let mut mem = Memory::new(Endian::Big);
+        mem.store(0x1000, &il::expr_const(0xDEADBEEF, 32)).unwrap();
+
+        let b0 = mem.load(0x1000, 8).unwrap().unwrap();
+        let b1 = mem.load(0x1001, 8).unwrap().unwrap();
+        let b2 = mem.load(0x1002, 8).unwrap().unwrap();
+        let b3 = mem.load(0x1003, 8).unwrap().unwrap();
+
+        assert_eq!(eval(&b0).unwrap().value_u64().unwrap(), 0xDE);
+        assert_eq!(eval(&b1).unwrap().value_u64().unwrap(), 0xAD);
+        assert_eq!(eval(&b2).unwrap().value_u64().unwrap(), 0xBE);
+        assert_eq!(eval(&b3).unwrap().value_u64().unwrap(), 0xEF);
+    }
+
+    #[test]
+    fn test_store_load_crossing_page_boundary() {
+        let mut mem = Memory::new(Endian::Little);
+        let addr = (PAGE_SIZE as u64) - 2; // 4094
+        mem.store(addr, &il::expr_const(0xAABBCCDD, 32)).unwrap();
+        let loaded = mem.load(addr, 32).unwrap().unwrap();
+        assert_eq!(eval(&loaded).unwrap().value_u64().unwrap(), 0xAABBCCDD);
+    }
+
+    #[test]
+    fn test_load_partially_uninitialized_returns_none() {
+        let mut mem = Memory::new(Endian::Little);
+        mem.store(0x2000, &il::expr_const(0x42, 8)).unwrap();
+        // Second byte at 0x2001 is uninitialized
+        let loaded = mem.load(0x2000, 16).unwrap();
+        assert!(loaded.is_none());
+    }
+
+    #[test]
+    fn test_backing_memory_fallback() {
+        let mut backing = backing::Memory::new(Endian::Little);
+        backing.set_memory(
+            0x3000,
+            vec![0x41, 0x42, 0x43, 0x44],
+            MemoryPermissions::READ,
+        );
+        let mem = Memory::new_with_backing(Endian::Little, RC::new(backing));
+
+        let b0 = mem.load(0x3000, 8).unwrap().unwrap();
+        let b1 = mem.load(0x3001, 8).unwrap().unwrap();
+        let b2 = mem.load(0x3002, 8).unwrap().unwrap();
+        let b3 = mem.load(0x3003, 8).unwrap().unwrap();
+
+        assert_eq!(eval(&b0).unwrap().value_u64().unwrap(), 0x41);
+        assert_eq!(eval(&b1).unwrap().value_u64().unwrap(), 0x42);
+        assert_eq!(eval(&b2).unwrap().value_u64().unwrap(), 0x43);
+        assert_eq!(eval(&b3).unwrap().value_u64().unwrap(), 0x44);
+    }
+
+    #[test]
+    fn test_page_overrides_backing() {
+        let mut backing = backing::Memory::new(Endian::Little);
+        backing.set_memory(0x3000, vec![0xFF], MemoryPermissions::READ);
+        let mut mem = Memory::new_with_backing(Endian::Little, RC::new(backing));
+
+        mem.store(0x3000, &il::expr_const(0x42, 8)).unwrap();
+        let loaded = mem.load(0x3000, 8).unwrap().unwrap();
+        assert_eq!(eval(&loaded).unwrap().value_u64().unwrap(), 0x42);
+    }
+
+    #[test]
+    fn test_set_permissions_unaligned_address_errors() {
+        let mut mem = Memory::new(Endian::Little);
+        let result = mem.set_permissions(0x1, 4096, Some(MemoryPermissions::READ));
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn test_set_permissions_unaligned_length_errors() {
+        let mut mem = Memory::new(Endian::Little);
+        let result = mem.set_permissions(0x0, 100, Some(MemoryPermissions::READ));
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn test_flatten_concrete_to_backing() {
+        let mut mem = Memory::new(Endian::Little);
+        mem.store(0x0, &il::expr_const(0x41, 8)).unwrap();
+        mem.store(0x1, &il::expr_const(0x42, 8)).unwrap();
+
+        // Before flatten, page exists
+        assert!(!mem.pages.is_empty());
+
+        mem.flatten().unwrap();
+
+        // After flatten, page removed (all concrete)
+        assert!(mem.pages.is_empty());
+
+        // Bytes still accessible via backing
+        let b0 = mem.load(0x0, 8).unwrap().unwrap();
+        let b1 = mem.load(0x1, 8).unwrap().unwrap();
+        assert_eq!(eval(&b0).unwrap().value_u64().unwrap(), 0x41);
+        assert_eq!(eval(&b1).unwrap().value_u64().unwrap(), 0x42);
+    }
+
+    #[test]
+    fn test_flatten_keeps_symbolic_page() {
+        let mut mem = Memory::new(Endian::Little);
+        let symbolic = il::expr_scalar("x", 8);
+        mem.store(0x0, &symbolic).unwrap();
+
+        mem.flatten().unwrap();
+
+        // Page should still exist (symbolic bytes can't flatten)
+        assert!(!mem.pages.is_empty());
+    }
+
+    #[test]
+    fn test_merge_differing_bytes_produce_ite() {
+        let mut mem_a = Memory::new(Endian::Little);
+        mem_a.store(0x0, &il::expr_const(0x41, 8)).unwrap();
+
+        let mut mem_b = Memory::new(Endian::Little);
+        mem_b.store(0x0, &il::expr_const(0x42, 8)).unwrap();
+
+        let constraint = il::expr_scalar("cond", 1);
+        let merged = mem_a.merge(&mem_b, &constraint).unwrap();
+        let loaded = merged.load(0x0, 8).unwrap().unwrap();
+
+        // Result should be an ITE, not a plain constant
+        assert!(!loaded.all_constants());
+    }
+
+    #[test]
+    fn test_merge_identical_bytes_unchanged() {
+        let mut mem_a = Memory::new(Endian::Little);
+        mem_a.store(0x0, &il::expr_const(0x41, 8)).unwrap();
+
+        let mut mem_b = Memory::new(Endian::Little);
+        mem_b.store(0x0, &il::expr_const(0x41, 8)).unwrap();
+
+        let constraint = il::expr_scalar("cond", 1);
+        let merged = mem_a.merge(&mem_b, &constraint).unwrap();
+        let loaded = merged.load(0x0, 8).unwrap().unwrap();
+
+        assert_eq!(eval(&loaded).unwrap().value_u64().unwrap(), 0x41);
+    }
+
+    #[test]
+    fn test_store_load_symbolic_roundtrip() {
+        let mut mem = Memory::new(Endian::Little);
+        let sym = il::expr_scalar("x", 8);
+        mem.store(0x1000, &sym).unwrap();
+        let loaded = mem.load(0x1000, 8).unwrap().unwrap();
+        assert_eq!(loaded, sym);
+    }
+
+    #[test]
+    fn test_load_buf_partially_uninitialized() {
+        let mut mem = Memory::new(Endian::Little);
+        mem.store(0x0, &il::expr_const(0x41, 8)).unwrap();
+        mem.store(0x1, &il::expr_const(0x42, 8)).unwrap();
+        // Only 2 bytes initialized, try to load 4
+        let result = mem.load_buf(0x0, 4).unwrap();
+        assert!(result.is_none());
+    }
+
+    #[test]
+    fn test_initialize_blank_fills_zeros() {
+        let mut mem = Memory::new(Endian::Little);
+        mem.initialize_blank(0x4000, 4).unwrap();
+
+        for i in 0..4u64 {
+            let byte = mem.load(0x4000 + i, 8).unwrap().unwrap();
+            assert_eq!(eval(&byte).unwrap().value_u64().unwrap(), 0);
+        }
     }
 }

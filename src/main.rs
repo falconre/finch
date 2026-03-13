@@ -11,6 +11,7 @@ pub mod driver;
 pub mod hooks;
 pub mod interpreter;
 
+#[allow(unexpected_cfgs)]
 pub mod error {
     error_chain! {
         types {
@@ -18,7 +19,7 @@ pub mod error {
         }
 
         foreign_links {
-            Falcon(::falcon::error::Error);
+            Falcon(::falcon::Error);
             Finch(::finch::error::Error);
             IoError(::std::io::Error);
             ReadLineError(::rustyline::error::ReadlineError);
@@ -33,76 +34,68 @@ use finch::platform;
 use std::path::{Path, PathBuf};
 
 fn run2(driver: Driver, matches: &clap::ArgMatches) -> Result<()> {
-    if matches.is_present("debugger") {
+    if matches.get_flag("debugger") {
         let debugger = debugger::Debugger::new(vec![driver]);
         let mut interpreter = interpreter::Interpreter::new(debugger);
         interpreter.interactive()
-    } else if let Some(debugger_script) = matches.value_of("debugger_script") {
+    } else if let Some(debugger_script) = matches.get_one::<String>("debugger_script") {
         let debugger = debugger::Debugger::new(vec![driver]);
         let mut interpreter = interpreter::Interpreter::new(debugger);
         interpreter.script(Path::new(debugger_script))
     } else {
         unimplemented!("Unicorn testing");
-        // let driver = driver::drive_to_address(driver, 0x1000, 1000000)?
-        //     .get(0)
-        //     .unwrap()
-        //     .clone();
-        // unimplemented!("unicorn testing");
-        // info!("Being unicorn testing");
-        // Ok(finch::unicorn_verify_amd64::step_with_unicorn(
-        //     driver, 100000,
-        // )?)
     }
 }
 
 fn run() -> Result<()> {
-    let matches = clap::App::new("finch")
+    let matches = clap::Command::new("finch")
         .version("0.1.0")
         .about("Falcon Symbolic Executor")
         .author("Alex Eubanks")
         .arg(
-            clap::Arg::with_name("filename")
-                .short("f")
+            clap::Arg::new("filename")
+                .short('f')
                 .value_name("FILE")
                 .help("Binary to symbolically execute")
                 .required(true),
         )
         .arg(
-            clap::Arg::with_name("base_path")
-                .short("b")
+            clap::Arg::new("base_path")
+                .short('b')
                 .value_name("BASE_PATH")
                 .help("Base path of filesystem")
                 .required(true),
         )
         .arg(
-            clap::Arg::with_name("debugger")
-                .short("d")
-                .help("Start the interactive debugger"),
+            clap::Arg::new("debugger")
+                .short('d')
+                .help("Start the interactive debugger")
+                .action(clap::ArgAction::SetTrue),
         )
         .arg(
-            clap::Arg::with_name("debugger_script")
-                .short("x")
+            clap::Arg::new("debugger_script")
+                .short('x')
                 .long("debugger_script")
                 .value_name("DEBUGGER_SCRIPT")
                 .conflicts_with("debugger")
                 .help("Give a file filled with debugger command"),
         )
         .arg(
-            clap::Arg::with_name("log")
-                .short("l")
+            clap::Arg::new("log")
+                .short('l')
                 .long("log")
                 .value_name("LOG_LEVEL")
                 .help("Log level"),
         )
         .get_matches();
 
-    let filename = matches.value_of("filename").unwrap();
+    let filename = matches.get_one::<String>("filename").unwrap();
 
     let base_path: Option<PathBuf> = matches
-        .value_of("base_path")
+        .get_one::<String>("base_path")
         .map(|base_path| base_path.into());
 
-    if let Some(log_level) = matches.value_of("log") {
+    if let Some(log_level) = matches.get_one::<String>("log").map(|s| s.as_str()) {
         let level_filter = match log_level {
             "debug" => Some(simplelog::LevelFilter::Debug),
             "info" => Some(simplelog::LevelFilter::Info),

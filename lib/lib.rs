@@ -3,14 +3,10 @@
 extern crate error_chain;
 #[macro_use]
 extern crate serde_derive;
-// extern crate unicorn;
-
 pub mod executor;
 pub mod platform;
-// pub mod unicorn_verify_amd64;
-// pub mod unicorn_verify_mips;
-// pub mod unicorn_verify_x86;
 
+#[allow(unexpected_cfgs)]
 pub mod error {
     error_chain! {
         types {
@@ -18,7 +14,7 @@ pub mod error {
         }
 
         foreign_links {
-            Falcon(::falcon::error::Error);
+            Falcon(::falcon::Error);
             FalconZ3(::falcon_z3::error::Error);
             FromUtf8Error(::std::string::FromUtf8Error);
             IoError(::std::io::Error);

@@ -136,7 +136,7 @@ impl Amd64 {
             ))
             .environment_variable(EnvironmentString::new_concrete("LOCALDOMAIN=localdomain"));
 
-        environment.initialize_process64(&mut state.memory_mut(), STACK_BASE, elf_linker)?;
+        environment.initialize_process64(state.memory_mut(), STACK_BASE, elf_linker)?;
 
         for i in 0..0x8000 {
             state
@@ -420,7 +420,7 @@ impl Amd64 {
                     .linux
                     .lseek(fd, offset as isize, origin)?;
 
-                state.set_scalar("rax", &il::expr_const(result as u64, 64))?;
+                state.set_scalar("rax", &il::expr_const(result, 64))?;
                 trace!(
                     "lseek 0x{:x} 0x{:x} 0x{:x} is {}",
                     fd,
@@ -442,7 +442,7 @@ impl Amd64 {
                     .linux
                     .mmap(&mut state.memory, addr, len, prot, flags, fd, off)?;
 
-                state.set_scalar("rax", &il::expr_const(address as u64, 64))?;
+                state.set_scalar("rax", &il::expr_const(address, 64))?;
 
                 trace!(
                     "mmap(0x{:x}, 0x{:x}, 0x{:x}, 0x{:x}, 0x{:x}, 0x{:x} = 0x{:x}",
@@ -466,7 +466,7 @@ impl Amd64 {
                     .linux
                     .mprotect(&mut state.memory, addr, len, prot)?;
 
-                state.set_scalar("rax", &il::expr_const(result as u64, 64))?;
+                state.set_scalar("rax", &il::expr_const(result, 64))?;
 
                 trace!(
                     "mprotect(0x{:x}, 0x{:x}, 0x{:x}) = 0x{:x}",
@@ -629,9 +629,8 @@ impl Amd64 {
                 }
 
                 // We need to read all the bytes we are writing
-                let bytes: ::std::result::Result<Vec<il::Expression>, Error> = (0..len)
-                    .into_iter()
-                    .try_fold(Vec::new(), |mut bytes, offset| {
+                let bytes: ::std::result::Result<Vec<il::Expression>, Error> =
+                    (0..len).try_fold(Vec::new(), |mut bytes, offset| {
                         fn get(state: &State, address: u64) -> Result<il::Expression> {
                             state.memory().load(address, 8)?.ok_or_else(|| {
                                 format!("Value for write was None address=0x{:08x}", address).into()

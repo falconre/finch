@@ -263,7 +263,7 @@ impl Driver {
     }
 
     /// Retrieve the RefProgramLocation for this Driver
-    pub fn ref_program_location(&self) -> il::RefProgramLocation {
+    pub fn ref_program_location(&self) -> il::RefProgramLocation<'_> {
         self.location.apply(&self.program).unwrap()
     }
 

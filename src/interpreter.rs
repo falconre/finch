@@ -4,7 +4,12 @@ use std::fs::File;
 use std::io::Read;
 use std::path::Path;
 
-use nom::{alt, map_res, named, tag, take_while1, tuple};
+use nom::{
+    branch::alt,
+    bytes::complete::{tag, take_while1},
+    combinator::map_res,
+    IResult, Parser,
+};
 
 #[derive(Clone, Debug)]
 pub enum Command {
@@ -32,91 +37,203 @@ fn map_decimal_u64(input: &str) -> ::std::result::Result<u64, ::std::num::ParseI
 }
 
 fn is_hex_digit(c: char) -> bool {
-    matches!(c, '0'..='9' | 'a'..='f' | 'A'..='F')
+    c.is_ascii_hexdigit()
 }
 
 fn is_decimal_digit(c: char) -> bool {
-    matches!(c, '0'..='9')
+    c.is_ascii_digit()
 }
 
-named!(parse_hex_u64<&str, u64>, alt!(
-    tuple!(
-        tag!("0x"),
-        map_res!(take_while1!(is_hex_digit), map_address)
-    ) => { |(_, value)| value }
-));
+fn parse_hex_u64(input: &str) -> IResult<&str, u64> {
+    let (input, (_, value)) =
+        (tag("0x"), map_res(take_while1(is_hex_digit), map_address)).parse(input)?;
+    Ok((input, value))
+}
 
-named!(parse_decimal_u64<&str, u64>,
-    map_res!(take_while1!(is_decimal_digit), map_decimal_u64)
-);
+fn parse_decimal_u64(input: &str) -> IResult<&str, u64> {
+    map_res(take_while1(is_decimal_digit), map_decimal_u64).parse(input)
+}
 
-named!(parse_u64<&str, u64>, alt!(
-    parse_hex_u64 |
-    parse_decimal_u64
-));
+fn parse_u64(input: &str) -> IResult<&str, u64> {
+    alt((parse_hex_u64, parse_decimal_u64)).parse(input)
+}
 
 fn is_space(c: char) -> bool {
     matches!(c, ' ' | '\t')
 }
 
-named!(parse_info<&str, Command>, alt!(
-    alt!(tag!("breakpoints") | tag!("b")) => {|_| Command::InfoBreakpoints} |
-    alt!(tag!("drivers") | tag!("d")) => {|_| Command::InfoDrivers} |
-    alt!(tag!("killpoints") | tag!("k")) => {|_| Command::InfoKillPoints}
-));
+fn parse_info(input: &str) -> IResult<&str, Command> {
+    alt((
+        |i| {
+            alt((tag("breakpoints"), tag("b")))
+                .parse(i)
+                .map(|(r, _)| (r, Command::InfoBreakpoints))
+        },
+        |i| {
+            alt((tag("drivers"), tag("d")))
+                .parse(i)
+                .map(|(r, _)| (r, Command::InfoDrivers))
+        },
+        |i| {
+            alt((tag("killpoints"), tag("k")))
+                .parse(i)
+                .map(|(r, _)| (r, Command::InfoKillPoints))
+        },
+    ))
+    .parse(input)
+}
 
-named!(parse_delete<&str, Command>, alt!(
-    alt!(tag!("breakpoints") | tag!("b")) => { |_| Command::DeleteBreakpoints }
-));
+fn parse_delete(input: &str) -> IResult<&str, Command> {
+    let (input, _) = alt((tag("breakpoints"), tag("b"))).parse(input)?;
+    Ok((input, Command::DeleteBreakpoints))
+}
 
-named!(parse_command <&str, Command>, alt!(
-    tuple!(
-        alt!(tag!("breakpoint") | tag!("b")),
-        take_while1!(is_space),
-        parse_u64
-    ) => { |(_, _, address)|
-        Command::AddBreakpoint(address)
-    } |
-
-    tuple!(
-        alt!( tag!("continue") | tag!("c")),
-        take_while1!(is_space),
-        parse_u64
-    ) => { |(_, _, address)|
-        Command::Continue(address as usize)
-    } |
-
-    tag!("cull") => { |_| Command::CullDrivers } |
-
-    tuple!(
-        alt!(tag!("delete") | tag!("d")),
-        take_while1!(is_space),
-        parse_delete
-    ) => {|(_, _, command)| command } |
-
-    tag!("flatten") => { |_| Command::Flatten } |
-
-    alt!(tag!("help") | tag!("h")) => { |_| Command::Help } |
-
-    tuple!(
-        alt!(tag!("info") | tag!("i")),
-        take_while1!(is_space),
-        parse_info
-    ) => { |(_, _, command)| command } |
-
-    tuple!(
-        alt!(tag!("killpoint") | tag!("k")),
-        take_while1!(is_space),
-        parse_u64
-    ) => { |(_, _, address)|
-        Command::AddKillPoint(address)
-    } |
-
-    alt!(tag!("quit") | tag!("q")) => { |_| Command::Quit }
-));
+fn parse_command(input: &str) -> IResult<&str, Command> {
+    alt((
+        |i| {
+            let (i, (_, _, address)) = (
+                alt((tag("breakpoint"), tag("b"))),
+                take_while1(is_space),
+                parse_u64,
+            )
+                .parse(i)?;
+            Ok((i, Command::AddBreakpoint(address)))
+        },
+        |i| {
+            let (i, (_, _, address)) = (
+                alt((tag("continue"), tag("c"))),
+                take_while1(is_space),
+                parse_u64,
+            )
+                .parse(i)?;
+            Ok((i, Command::Continue(address as usize)))
+        },
+        |i| {
+            let (i, _) = tag("cull").parse(i)?;
+            Ok((i, Command::CullDrivers))
+        },
+        |i| {
+            let (i, (_, _, command)) = (
+                alt((tag("delete"), tag("d"))),
+                take_while1(is_space),
+                parse_delete,
+            )
+                .parse(i)?;
+            Ok((i, command))
+        },
+        |i| {
+            let (i, _) = tag("flatten").parse(i)?;
+            Ok((i, Command::Flatten))
+        },
+        |i| {
+            let (i, _) = alt((tag("help"), tag("h"))).parse(i)?;
+            Ok((i, Command::Help))
+        },
+        |i| {
+            let (i, (_, _, command)) = (
+                alt((tag("info"), tag("i"))),
+                take_while1(is_space),
+                parse_info,
+            )
+                .parse(i)?;
+            Ok((i, command))
+        },
+        |i| {
+            let (i, (_, _, address)) = (
+                alt((tag("killpoint"), tag("k"))),
+                take_while1(is_space),
+                parse_u64,
+            )
+                .parse(i)?;
+            Ok((i, Command::AddKillPoint(address)))
+        },
+        |i| {
+            let (i, _) = alt((tag("quit"), tag("q"))).parse(i)?;
+            Ok((i, Command::Quit))
+        },
+    ))
+    .parse(input)
+}
 
 pub struct Interpreter {
     debugger: Debugger,
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_parse_hex_u64() {
+        let (_, val) = parse_hex_u64("0xff").unwrap();
+        assert_eq!(val, 255);
+        let (_, val) = parse_hex_u64("0xDEAD").unwrap();
+        assert_eq!(val, 0xDEAD);
+    }
+
+    #[test]
+    fn test_parse_decimal_u64() {
+        let (_, val) = parse_decimal_u64("42").unwrap();
+        assert_eq!(val, 42);
+        let (_, val) = parse_decimal_u64("0").unwrap();
+        assert_eq!(val, 0);
+    }
+
+    #[test]
+    fn test_parse_u64_hex_and_decimal() {
+        let (_, val) = parse_u64("0x10").unwrap();
+        assert_eq!(val, 16);
+        let (_, val) = parse_u64("10").unwrap();
+        assert_eq!(val, 10);
+    }
+
+    #[test]
+    fn test_parse_command_breakpoint() {
+        let (_, cmd) = parse_command("b 0x1000").unwrap();
+        assert!(matches!(cmd, Command::AddBreakpoint(0x1000)));
+    }
+
+    #[test]
+    fn test_parse_command_continue() {
+        let (_, cmd) = parse_command("c 10").unwrap();
+        assert!(matches!(cmd, Command::Continue(10)));
+    }
+
+    #[test]
+    fn test_parse_command_quit() {
+        let (_, cmd) = parse_command("q").unwrap();
+        assert!(matches!(cmd, Command::Quit));
+        let (_, cmd) = parse_command("quit").unwrap();
+        assert!(matches!(cmd, Command::Quit));
+    }
+
+    #[test]
+    fn test_parse_command_help() {
+        let (_, cmd) = parse_command("h").unwrap();
+        assert!(matches!(cmd, Command::Help));
+        let (_, cmd) = parse_command("help").unwrap();
+        assert!(matches!(cmd, Command::Help));
+    }
+
+    #[test]
+    fn test_parse_command_info() {
+        let (_, cmd) = parse_command("i breakpoints").unwrap();
+        assert!(matches!(cmd, Command::InfoBreakpoints));
+        let (_, cmd) = parse_command("i d").unwrap();
+        assert!(matches!(cmd, Command::InfoDrivers));
+    }
+
+    #[test]
+    fn test_parse_command_cull() {
+        let (_, cmd) = parse_command("cull").unwrap();
+        assert!(matches!(cmd, Command::CullDrivers));
+    }
+
+    #[test]
+    fn test_parse_command_flatten() {
+        let (_, cmd) = parse_command("flatten").unwrap();
+        assert!(matches!(cmd, Command::Flatten));
+    }
 }
 
 impl Interpreter {
@@ -152,11 +269,11 @@ impl Interpreter {
     }
 
     pub fn interactive(&mut self) -> Result<()> {
-        let mut rl = rustyline::Editor::<()>::new();
+        let mut rl = rustyline::Editor::<(), rustyline::history::DefaultHistory>::new()?;
 
         'debugger_loop: loop {
             let line = rl.readline("> ")?;
-            rl.add_history_entry(&line);
+            let _ = rl.add_history_entry(&line);
 
             let command = match parse_command(&line) {
                 Ok(command) => command.1,
