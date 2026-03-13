@@ -399,7 +399,7 @@ dependencies = [
 
 [[package]]
 name = "falcon-finch"
-version = "0.5.2"
+version = "0.6.0"
 dependencies = [
  "byteorder",
  "clap",
