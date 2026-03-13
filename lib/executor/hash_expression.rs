@@ -105,6 +105,10 @@ impl ExpressionHash {
         ehbinop(self, bits, HashExpression::Shr)
     }
 
+    pub fn ashr(self, other: ExpressionHash) -> ExpressionHash {
+        ehbinop(self, other, HashExpression::AShr)
+    }
+
     pub fn cmpeq(self, other: ExpressionHash) -> ExpressionHash {
         ehbinop(self, other, HashExpression::Cmpeq)
     }
@@ -215,6 +219,10 @@ impl ExpressionHash {
                     sym(&lhs, s, replacers),
                     sym(&rhs, s, replacers),
                 )),
+                HashExpression::AShr(lhs, rhs) => he2eh(&HashExpression::AShr(
+                    sym(&lhs, s, replacers),
+                    sym(&rhs, s, replacers),
+                )),
                 HashExpression::Cmpeq(lhs, rhs) => he2eh(&HashExpression::Cmpeq(
                     sym(&lhs, s, replacers),
                     sym(&rhs, s, replacers),
@@ -272,6 +280,7 @@ enum HashExpression {
     Xor(ExpressionHash, ExpressionHash),
     Shl(ExpressionHash, ExpressionHash),
     Shr(ExpressionHash, ExpressionHash),
+    AShr(ExpressionHash, ExpressionHash),
     Cmpeq(ExpressionHash, ExpressionHash),
     Cmpneq(ExpressionHash, ExpressionHash),
     Cmpltu(ExpressionHash, ExpressionHash),
@@ -298,7 +307,8 @@ impl HashExpression {
             | HashExpression::Or(ref lhs, _)
             | HashExpression::Xor(ref lhs, _)
             | HashExpression::Shl(ref lhs, _)
-            | HashExpression::Shr(ref lhs, _) => lhs.bits(),
+            | HashExpression::Shr(ref lhs, _)
+            | HashExpression::AShr(ref lhs, _) => lhs.bits(),
             HashExpression::Cmpeq(_, _)
             | HashExpression::Cmpneq(_, _)
             | HashExpression::Cmpltu(_, _)
@@ -342,7 +352,8 @@ impl HashExpressionStore {
             | HashExpression::Or(ref lhs, _)
             | HashExpression::Xor(ref lhs, _)
             | HashExpression::Shl(ref lhs, _)
-            | HashExpression::Shr(ref lhs, _) => self.bits(lhs),
+            | HashExpression::Shr(ref lhs, _)
+            | HashExpression::AShr(ref lhs, _) => self.bits(lhs),
             HashExpression::Cmpeq(_, _)
             | HashExpression::Cmpneq(_, _)
             | HashExpression::Cmpltu(_, _)
@@ -393,6 +404,9 @@ impl HashExpressionStore {
             }
             HashExpression::Shr(ref lhs, ref rhs) => {
                 il::Expression::shr(self.expression(lhs)?, self.expression(rhs)?)?
+            }
+            HashExpression::AShr(ref lhs, ref rhs) => {
+                il::Expression::ashr(self.expression(lhs)?, self.expression(rhs)?)?
             }
             HashExpression::Cmpeq(ref lhs, ref rhs) => {
                 il::Expression::cmpeq(self.expression(lhs)?, self.expression(rhs)?)?
@@ -471,6 +485,9 @@ impl HashExpressionStore {
                 }
                 il::Expression::Shr(ref lhs, ref rhs) => {
                     HashExpression::Shr(gh(hes, lhs), gh(hes, rhs))
+                }
+                il::Expression::AShr(ref lhs, ref rhs) => {
+                    HashExpression::AShr(gh(hes, lhs), gh(hes, rhs))
                 }
                 il::Expression::Cmpeq(ref lhs, ref rhs) => {
                     HashExpression::Cmpeq(gh(hes, lhs), gh(hes, rhs))

@@ -1,14 +1,16 @@
 use crate::error::*;
 use finch::executor::Driver;
 
+type HookFn = Box<dyn Fn(&Driver) -> Result<Option<Vec<Driver>>>>;
+
 pub struct Hook {
-    hook: Box<dyn Fn(&Driver) -> Result<Option<Vec<Driver>>>>,
+    hook: HookFn,
 }
 
 impl Hook {
-    pub fn new<F: 'static>(hook: F) -> Hook
+    pub fn new<F>(hook: F) -> Hook
     where
-        F: Fn(&Driver) -> Result<Option<Vec<Driver>>>,
+        F: Fn(&Driver) -> Result<Option<Vec<Driver>>> + 'static,
     {
         Hook {
             hook: Box::new(hook),

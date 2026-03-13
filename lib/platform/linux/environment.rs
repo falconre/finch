@@ -81,7 +81,7 @@ impl Environment {
     /// will configure the process in the passed memory, which should be blank.
     pub fn initialize_process32(
         &self,
-        mut memory: &mut Memory,
+        memory: &mut Memory,
         stack_address: u64,
         elf_linker: &ElfLinker,
     ) -> Result<()> {
@@ -154,7 +154,7 @@ impl Environment {
 
         // push argc
         push(
-            &mut memory,
+            memory,
             &mut stack_address,
             &il::expr_const(self.command_line_arguments.len() as u64, 32),
         )?;
@@ -162,34 +162,34 @@ impl Environment {
         // push argv
         for command_line_argument in &self.command_line_arguments {
             push(
-                &mut memory,
+                memory,
                 &mut stack_address,
                 &il::expr_const(strings_address, 32),
             )?;
-            set_string(&mut memory, &mut strings_address, command_line_argument)?;
+            set_string(memory, &mut strings_address, command_line_argument)?;
         }
 
         // null word separates argv from environment variables
-        push(&mut memory, &mut stack_address, &il::expr_const(0, 32))?;
+        push(memory, &mut stack_address, &il::expr_const(0, 32))?;
 
         // push a null word if there are no environment variables
         if self.environment_variables.is_empty() {
-            push(&mut memory, &mut stack_address, &il::expr_const(0, 32))?;
+            push(memory, &mut stack_address, &il::expr_const(0, 32))?;
         }
         // otherwise push environment variables
         else {
             for environment_variable in &self.environment_variables {
                 push(
-                    &mut memory,
+                    memory,
                     &mut stack_address,
                     &il::expr_const(strings_address, 32),
                 )?;
-                set_string(&mut memory, &mut strings_address, environment_variable)?;
+                set_string(memory, &mut strings_address, environment_variable)?;
             }
         }
 
         // null word terminates environment variables
-        push(&mut memory, &mut stack_address, &il::expr_const(0, 32))?;
+        push(memory, &mut stack_address, &il::expr_const(0, 32))?;
 
         // We need some information from the Elf for the Elf Auxiliary Table
         // entries
@@ -223,9 +223,9 @@ impl Environment {
         let ehdr = elf.elf().header;
 
         // 0xbff00028 AT_PHDR (0x3) is beginning of PHDR for this binary
-        push(&mut memory, &mut stack_address, &il::expr_const(3, 32))?;
+        push(memory, &mut stack_address, &il::expr_const(3, 32))?;
         push(
-            &mut memory,
+            memory,
             &mut stack_address,
             &il::expr_const(phdr_address, 32),
         )?;
@@ -233,9 +233,9 @@ impl Environment {
         // state.memory_mut().store(0xbff0002c, &il::expr_const(phdr_address, 32))?;
 
         // 0xbff00030 AT_PHENT (0x4)
-        push(&mut memory, &mut stack_address, &il::expr_const(4, 32))?;
+        push(memory, &mut stack_address, &il::expr_const(4, 32))?;
         push(
-            &mut memory,
+            memory,
             &mut stack_address,
             &il::expr_const(ehdr.e_phentsize as u64, 32),
         )?;
@@ -243,9 +243,9 @@ impl Environment {
         // state.memory_mut().store(0xbff00034, &il::expr_const(ehdr.e_phentsize as u64, 32))?;
 
         // 0xbff00038 AT_PHNUM (0x5)
-        push(&mut memory, &mut stack_address, &il::expr_const(5, 32))?;
+        push(memory, &mut stack_address, &il::expr_const(5, 32))?;
         push(
-            &mut memory,
+            memory,
             &mut stack_address,
             &il::expr_const(ehdr.e_phnum as u64, 32),
         )?;
@@ -253,8 +253,8 @@ impl Environment {
         // state.memory_mut().store(0xbff0003c, &il::expr_const(ehdr.e_phnum as u64, 32))?;
 
         // 0xbff00040 AT_PAGESZ (0x6)
-        push(&mut memory, &mut stack_address, &il::expr_const(6, 32))?;
-        push(&mut memory, &mut stack_address, &il::expr_const(0x1000, 32))?;
+        push(memory, &mut stack_address, &il::expr_const(6, 32))?;
+        push(memory, &mut stack_address, &il::expr_const(0x1000, 32))?;
         // state.memory_mut().store(0xbff00040, &il::expr_const(6, 32))?;
         // state.memory_mut().store(0xbff00044, &il::expr_const(0x1000, 32))?;
 
@@ -265,25 +265,25 @@ impl Environment {
             .unwrap_or(0);
 
         // 0xbff00048 AT_BASE (0x7)
-        push(&mut memory, &mut stack_address, &il::expr_const(7, 32))?;
+        push(memory, &mut stack_address, &il::expr_const(7, 32))?;
         push(
-            &mut memory,
+            memory,
             &mut stack_address,
-            &il::expr_const(interpreter_base_address as u64, 32),
+            &il::expr_const(interpreter_base_address, 32),
         )?;
         // state.memory_mut().store(0xbff00048, &il::expr_const(7, 32))?;
         // state.memory_mut().store(0xbff0004c, &il::expr_const(interpreter_base_address, 32))?;
 
         // 0xbff00050 AT_BASE (0x8)
-        push(&mut memory, &mut stack_address, &il::expr_const(8, 32))?;
-        push(&mut memory, &mut stack_address, &il::expr_const(0, 32))?;
+        push(memory, &mut stack_address, &il::expr_const(8, 32))?;
+        push(memory, &mut stack_address, &il::expr_const(0, 32))?;
         // state.memory_mut().store(0xbff00050, &il::expr_const(8, 32))?;
         // state.memory_mut().store(0xbff00054, &il::expr_const(0, 32))?;
 
         // 0xbff00058 AT_ENTRY (0x9)
-        push(&mut memory, &mut stack_address, &il::expr_const(9, 32))?;
+        push(memory, &mut stack_address, &il::expr_const(9, 32))?;
         push(
-            &mut memory,
+            memory,
             &mut stack_address,
             &il::expr_const(elf.program_entry(), 32),
         )?;
@@ -291,8 +291,8 @@ impl Environment {
         // state.memory_mut().store(0xbff0005c, &il::expr_const(elf.program_entry(), 32))?;
 
         // 0xbff00060 AT_NULL (0x0)
-        push(&mut memory, &mut stack_address, &il::expr_const(0, 32))?;
-        push(&mut memory, &mut stack_address, &il::expr_const(0, 32))?;
+        push(memory, &mut stack_address, &il::expr_const(0, 32))?;
+        push(memory, &mut stack_address, &il::expr_const(0, 32))?;
         // state.memory_mut().store(0xbff00060, &il::expr_const(0, 32))?;
         // state.memory_mut().store(0xbff00064, &il::expr_const(0, 32))?;
 
@@ -305,7 +305,7 @@ impl Environment {
     /// will configure the process in the passed memory, which should be blank.
     pub fn initialize_process64(
         &self,
-        mut memory: &mut Memory,
+        memory: &mut Memory,
         stack_address: u64,
         elf_linker: &ElfLinker,
     ) -> Result<()> {
@@ -383,7 +383,7 @@ impl Environment {
 
         // push argc
         push(
-            &mut memory,
+            memory,
             &mut stack_address,
             &il::expr_const(self.command_line_arguments.len() as u64, 64),
         )?;
@@ -391,34 +391,34 @@ impl Environment {
         // push argv
         for command_line_argument in &self.command_line_arguments {
             push(
-                &mut memory,
+                memory,
                 &mut stack_address,
                 &il::expr_const(strings_address, 64),
             )?;
-            set_string(&mut memory, &mut strings_address, command_line_argument)?;
+            set_string(memory, &mut strings_address, command_line_argument)?;
         }
 
         // null word separates argv from environment variables
-        push(&mut memory, &mut stack_address, &il::expr_const(0, 64))?;
+        push(memory, &mut stack_address, &il::expr_const(0, 64))?;
 
         // push a null word if there are no environment variables
         if self.environment_variables.is_empty() {
-            push(&mut memory, &mut stack_address, &il::expr_const(0, 64))?;
+            push(memory, &mut stack_address, &il::expr_const(0, 64))?;
         }
         // otherwise push environment variables
         else {
             for environment_variable in &self.environment_variables {
                 push(
-                    &mut memory,
+                    memory,
                     &mut stack_address,
                     &il::expr_const(strings_address, 64),
                 )?;
-                set_string(&mut memory, &mut strings_address, environment_variable)?;
+                set_string(memory, &mut strings_address, environment_variable)?;
             }
         }
 
         // null word terminates environment variables
-        push(&mut memory, &mut stack_address, &il::expr_const(0, 64))?;
+        push(memory, &mut stack_address, &il::expr_const(0, 64))?;
 
         // We need some information from the Elf for the Elf Auxiliary Table
         // entries
@@ -452,9 +452,9 @@ impl Environment {
         let ehdr = elf.elf().header;
 
         // 0xbff00028 AT_PHDR (0x3) is beginning of PHDR for this binary
-        push(&mut memory, &mut stack_address, &il::expr_const(3, 64))?;
+        push(memory, &mut stack_address, &il::expr_const(3, 64))?;
         push(
-            &mut memory,
+            memory,
             &mut stack_address,
             &il::expr_const(phdr_address, 64),
         )?;
@@ -462,9 +462,9 @@ impl Environment {
         // state.memory_mut().store(0xbff0002c, &il::expr_const(phdr_address, 32))?;
 
         // 0xbff00030 AT_PHENT (0x4)
-        push(&mut memory, &mut stack_address, &il::expr_const(4, 64))?;
+        push(memory, &mut stack_address, &il::expr_const(4, 64))?;
         push(
-            &mut memory,
+            memory,
             &mut stack_address,
             &il::expr_const(ehdr.e_phentsize as u64, 64),
         )?;
@@ -472,9 +472,9 @@ impl Environment {
         // state.memory_mut().store(0xbff00034, &il::expr_const(ehdr.e_phentsize as u64, 32))?;
 
         // 0xbff00038 AT_PHNUM (0x5)
-        push(&mut memory, &mut stack_address, &il::expr_const(5, 64))?;
+        push(memory, &mut stack_address, &il::expr_const(5, 64))?;
         push(
-            &mut memory,
+            memory,
             &mut stack_address,
             &il::expr_const(ehdr.e_phnum as u64, 64),
         )?;
@@ -482,8 +482,8 @@ impl Environment {
         // state.memory_mut().store(0xbff0003c, &il::expr_const(ehdr.e_phnum as u64, 32))?;
 
         // 0xbff00040 AT_PAGESZ (0x6)
-        push(&mut memory, &mut stack_address, &il::expr_const(6, 64))?;
-        push(&mut memory, &mut stack_address, &il::expr_const(0x1000, 64))?;
+        push(memory, &mut stack_address, &il::expr_const(6, 64))?;
+        push(memory, &mut stack_address, &il::expr_const(0x1000, 64))?;
         // state.memory_mut().store(0xbff00040, &il::expr_const(6, 32))?;
         // state.memory_mut().store(0xbff00044, &il::expr_const(0x1000, 32))?;
 
@@ -494,25 +494,25 @@ impl Environment {
             .unwrap_or(0);
 
         // 0xbff00048 AT_BASE (0x7)
-        push(&mut memory, &mut stack_address, &il::expr_const(7, 64))?;
+        push(memory, &mut stack_address, &il::expr_const(7, 64))?;
         push(
-            &mut memory,
+            memory,
             &mut stack_address,
-            &il::expr_const(interpreter_base_address as u64, 64),
+            &il::expr_const(interpreter_base_address, 64),
         )?;
         // state.memory_mut().store(0xbff00048, &il::expr_const(7, 32))?;
         // state.memory_mut().store(0xbff0004c, &il::expr_const(interpreter_base_address, 32))?;
 
         // 0xbff00050 AT_BASE (0x8)
-        push(&mut memory, &mut stack_address, &il::expr_const(8, 64))?;
-        push(&mut memory, &mut stack_address, &il::expr_const(0, 64))?;
+        push(memory, &mut stack_address, &il::expr_const(8, 64))?;
+        push(memory, &mut stack_address, &il::expr_const(0, 64))?;
         // state.memory_mut().store(0xbff00050, &il::expr_const(8, 32))?;
         // state.memory_mut().store(0xbff00054, &il::expr_const(0, 32))?;
 
         // 0xbff00058 AT_ENTRY (0x9)
-        push(&mut memory, &mut stack_address, &il::expr_const(9, 64))?;
+        push(memory, &mut stack_address, &il::expr_const(9, 64))?;
         push(
-            &mut memory,
+            memory,
             &mut stack_address,
             &il::expr_const(elf.program_entry(), 64),
         )?;
@@ -520,10 +520,10 @@ impl Environment {
         // state.memory_mut().store(0xbff0005c, &il::expr_const(elf.program_entry(), 32))?;
 
         // 0xbff00060 AT_NULL (0x0)
-        push(&mut memory, &mut stack_address, &il::expr_const(0, 64))?;
-        push(&mut memory, &mut stack_address, &il::expr_const(0, 64))?;
-        push(&mut memory, &mut stack_address, &il::expr_const(0, 64))?;
-        push(&mut memory, &mut stack_address, &il::expr_const(0, 64))?;
+        push(memory, &mut stack_address, &il::expr_const(0, 64))?;
+        push(memory, &mut stack_address, &il::expr_const(0, 64))?;
+        push(memory, &mut stack_address, &il::expr_const(0, 64))?;
+        push(memory, &mut stack_address, &il::expr_const(0, 64))?;
         // state.memory_mut().store(0xbff00060, &il::expr_const(0, 32))?;
         // state.memory_mut().store(0xbff00064, &il::expr_const(0, 32))?;
 

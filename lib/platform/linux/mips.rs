@@ -135,7 +135,7 @@ impl Mips {
                 128,
             ));
 
-        environment.initialize_process32(&mut state.memory_mut(), STACK_BASE, elf_linker)?;
+        environment.initialize_process32(state.memory_mut(), STACK_BASE, elf_linker)?;
 
         for i in 0..0x8000 {
             state
@@ -392,7 +392,7 @@ impl Mips {
                     .linux
                     .lseek(a0, (a1 as i32) as isize, a2)?;
 
-                state.set_scalar("$v0", &il::expr_const(result as u64, 32))?;
+                state.set_scalar("$v0", &il::expr_const(result, 32))?;
                 if result as i64 >= 0 {
                     state.set_scalar("$a3", &il::expr_const(0, 32))?;
                 } else {
@@ -413,7 +413,7 @@ impl Mips {
                     .linux
                     .mmap(&mut state.memory, a0, a1, a2, a3, stack0, stack1)?;
 
-                state.set_scalar("$v0", &il::expr_const(address as u64, 32))?;
+                state.set_scalar("$v0", &il::expr_const(address, 32))?;
                 state.set_scalar("$a3", &il::expr_const(0, 32))?;
 
                 trace!(
@@ -438,7 +438,7 @@ impl Mips {
                     .linux
                     .mprotect(&mut state.memory, a0, a1, a2)?;
 
-                state.set_scalar("$v0", &il::expr_const(result as u64, 32))?;
+                state.set_scalar("$v0", &il::expr_const(result, 32))?;
 
                 if result == 0 {
                     state.set_scalar("$a3", &il::expr_const(0, 32))?;
@@ -653,9 +653,8 @@ impl Mips {
                 }
 
                 // We need to read all the bytes we are writing
-                let bytes: ::std::result::Result<Vec<il::Expression>, Error> = (0..a2)
-                    .into_iter()
-                    .try_fold(Vec::new(), |mut bytes, offset| {
+                let bytes: ::std::result::Result<Vec<il::Expression>, Error> =
+                    (0..a2).try_fold(Vec::new(), |mut bytes, offset| {
                         fn get(state: &State, address: u64) -> Result<il::Expression> {
                             state.memory().load(address, 8)?.ok_or_else(|| {
                                 format!(

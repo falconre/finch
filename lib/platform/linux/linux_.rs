@@ -143,7 +143,10 @@ impl Linux {
         let address = if address > 0 {
             if address + length > self.mmap_address {
                 self.mmap_address = address + length;
-                if self.mmap_address % crate::executor::PAGE_SIZE as u64 > 0 {
+                if !self
+                    .mmap_address
+                    .is_multiple_of(crate::executor::PAGE_SIZE as u64)
+                {
                     self.mmap_address += crate::executor::PAGE_SIZE as u64;
                     self.mmap_address &= !(crate::executor::PAGE_SIZE as u64 - 1);
                 }
@@ -151,18 +154,19 @@ impl Linux {
             address
         } else {
             let address = self.mmap_address;
-            let permissions_length = if length as usize % crate::executor::PAGE_SIZE > 0 {
-                let pl = length as usize + crate::executor::PAGE_SIZE;
-                pl & (!(crate::executor::PAGE_SIZE - 1))
-            } else {
-                length as usize
-            };
+            let permissions_length =
+                if !(length as usize).is_multiple_of(crate::executor::PAGE_SIZE) {
+                    let pl = length as usize + crate::executor::PAGE_SIZE;
+                    pl & (!(crate::executor::PAGE_SIZE - 1))
+                } else {
+                    length as usize
+                };
             self.mmap_address += permissions_length as u64;
             address
         };
 
         // this straight code-copying, ugly shiz. fix later
-        let permissions_length = if length as usize % crate::executor::PAGE_SIZE > 0 {
+        let permissions_length = if !(length as usize).is_multiple_of(crate::executor::PAGE_SIZE) {
             let pl = length as usize + crate::executor::PAGE_SIZE;
             pl & (!(crate::executor::PAGE_SIZE - 1))
         } else {
@@ -205,7 +209,7 @@ impl Linux {
             permissions |= MemoryPermissions::EXECUTE;
         }
 
-        let permissions_length = if length as usize % crate::executor::PAGE_SIZE > 0 {
+        let permissions_length = if !(length as usize).is_multiple_of(crate::executor::PAGE_SIZE) {
             let pl = length as usize + crate::executor::PAGE_SIZE;
             pl & (!(crate::executor::PAGE_SIZE - 1))
         } else {

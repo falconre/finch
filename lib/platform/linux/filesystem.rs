@@ -124,18 +124,18 @@ impl FileSystem {
 
     /// Returns true if the file descriptor exists.
     pub fn fd_valid(&self, fd: usize) -> bool {
-        self.file_descriptors.get(&fd).is_some()
+        self.file_descriptors.contains_key(&fd)
     }
 
     /// Attempt to open a file and read it into the filesystem model. Returns
     /// a file descriptor if the file exists, or None.
     pub fn open(&mut self, path: &str) -> Result<Option<usize>> {
-        if self.files.get(path).is_some() {
+        if self.files.contains_key(path) {
             return Ok(Some(self.add_file_descriptor(path)));
         }
 
         if self.get_path(path).exists() {
-            let mut file = File::open(&self.get_path(path))?;
+            let mut file = File::open(self.get_path(path))?;
 
             let mut buf = Vec::new();
             file.read_to_end(&mut buf)?;
@@ -164,7 +164,7 @@ impl FileSystem {
 
     /// Return true if a file exists, false otherwise
     pub fn exists(&self, path: &str) -> bool {
-        self.files.get(path).is_some() || PathBuf::from(path.to_string()).exists()
+        self.files.contains_key(path) || PathBuf::from(path.to_string()).exists()
     }
 
     /// Zeroize the data in a file
@@ -179,7 +179,7 @@ impl FileSystem {
 
     /// Get a mutable reference to the data for a file
     pub fn file_bytes_mut(&mut self, path: &str) -> Option<&mut Vec<il::Expression>> {
-        self.files.get_mut(path).map(|v| RC::make_mut(v))
+        self.files.get_mut(path).map(RC::make_mut)
     }
 
     /// Get the bytes to a file pointed to by a file descriptor
@@ -194,7 +194,7 @@ impl FileSystem {
     /// otherwise
     pub fn close_fd(&mut self, fd: usize) -> bool {
         if self.file_descriptors.remove(&fd).is_some() {
-            while self.file_descriptors.get(&(self.next_fd - 1)).is_none() {
+            while !self.file_descriptors.contains_key(&(self.next_fd - 1)) {
                 if self.next_fd == 0 {
                     break;
                 }
@@ -290,25 +290,283 @@ impl FileSystem {
     }
 }
 
-#[test]
-fn test() {
-    use std::fs::File;
-    use std::io::Write;
+#[cfg(test)]
+mod tests {
+    use super::*;
 
-    let mut file = File::create("/tmp/test.finch.filesystem").unwrap();
-    file.write_all("AAAABBBBCCCCDDDD".as_bytes()).unwrap();
+    #[test]
+    fn test_existing_filesystem_open_read() {
+        use std::fs::File;
+        use std::io::Write;
 
-    let mut filesystem = FileSystem::new(Some("/tmp".into())).unwrap();
-    let fd = filesystem.open("/test.finch.filesystem").unwrap().unwrap();
+        let mut file = File::create("/tmp/test.finch.filesystem").unwrap();
+        file.write_all("AAAABBBBCCCCDDDD".as_bytes()).unwrap();
 
-    let bytes = filesystem.read_fd(fd, 16).unwrap().unwrap();
+        let mut filesystem = FileSystem::new(Some("/tmp".into())).unwrap();
+        let fd = filesystem.open("/test.finch.filesystem").unwrap().unwrap();
 
-    assert_eq!(bytes[1], il::expr_const(0x41, 8));
-    assert_eq!(bytes[5], il::expr_const(0x42, 8));
-    assert_eq!(bytes[10], il::expr_const(0x43, 8));
-    assert_eq!(bytes[12], il::expr_const(0x44, 8));
+        let bytes = filesystem.read_fd(fd, 16).unwrap().unwrap();
 
-    assert_eq!(bytes.len(), 16);
+        assert_eq!(bytes[1], il::expr_const(0x41, 8));
+        assert_eq!(bytes[5], il::expr_const(0x42, 8));
+        assert_eq!(bytes[10], il::expr_const(0x43, 8));
+        assert_eq!(bytes[12], il::expr_const(0x44, 8));
 
-    assert_eq!(filesystem.size_fd(fd).unwrap(), 16);
+        assert_eq!(bytes.len(), 16);
+
+        assert_eq!(filesystem.size_fd(fd).unwrap(), 16);
+    }
+
+    #[test]
+    fn test_new_creates_stdin_stdout_stderr() {
+        let fs = FileSystem::new(None).unwrap();
+        assert!(fs.fd_valid(0)); // stdin
+        assert!(fs.fd_valid(1)); // stdout
+        assert!(fs.fd_valid(2)); // stderr
+        assert!(!fs.fd_valid(3));
+    }
+
+    #[test]
+    fn test_create_existing_file_gets_new_fd() {
+        let mut fs = FileSystem::new(None).unwrap();
+        let fd1 = fs.create("/testfile").unwrap();
+        let fd2 = fs.create("/testfile").unwrap();
+        assert_ne!(fd1, fd2);
+    }
+
+    #[test]
+    fn test_read_fd_at_eof_returns_empty() {
+        let mut fs = FileSystem::new(None).unwrap();
+        let fd = fs.create("/eof_test").unwrap();
+        // Write 2 bytes
+        fs.write(
+            "/eof_test",
+            vec![il::expr_const(0x41, 8), il::expr_const(0x42, 8)],
+            0,
+        )
+        .unwrap();
+        // Read all bytes
+        let bytes = fs.read_fd(fd, 10).unwrap().unwrap();
+        assert_eq!(bytes.len(), 2);
+        // Read again — at EOF
+        let bytes = fs.read_fd(fd, 10).unwrap().unwrap();
+        assert!(bytes.is_empty());
+    }
+
+    #[test]
+    fn test_read_fd_short_read() {
+        let mut fs = FileSystem::new(None).unwrap();
+        let fd = fs.create("/short").unwrap();
+        fs.write(
+            "/short",
+            vec![
+                il::expr_const(0x41, 8),
+                il::expr_const(0x42, 8),
+                il::expr_const(0x43, 8),
+            ],
+            0,
+        )
+        .unwrap();
+        // Request 10, only 3 available
+        let bytes = fs.read_fd(fd, 10).unwrap().unwrap();
+        assert_eq!(bytes.len(), 3);
+    }
+
+    #[test]
+    fn test_fd_seek_set() {
+        let mut fs = FileSystem::new(None).unwrap();
+        let fd = fs.create("/seek_test").unwrap();
+        fs.write(
+            "/seek_test",
+            vec![
+                il::expr_const(0x41, 8),
+                il::expr_const(0x42, 8),
+                il::expr_const(0x43, 8),
+                il::expr_const(0x44, 8),
+            ],
+            0,
+        )
+        .unwrap();
+        let offset = fs.fd_seek(fd, 2, Whence::Set).unwrap();
+        assert_eq!(offset, 2);
+        let bytes = fs.read_fd(fd, 2).unwrap().unwrap();
+        assert_eq!(bytes[0], il::expr_const(0x43, 8));
+        assert_eq!(bytes[1], il::expr_const(0x44, 8));
+    }
+
+    #[test]
+    fn test_fd_seek_cursor_forward_and_back() {
+        let mut fs = FileSystem::new(None).unwrap();
+        let fd = fs.create("/cursor_test").unwrap();
+        fs.write(
+            "/cursor_test",
+            vec![
+                il::expr_const(0x41, 8),
+                il::expr_const(0x42, 8),
+                il::expr_const(0x43, 8),
+                il::expr_const(0x44, 8),
+                il::expr_const(0x45, 8),
+            ],
+            0,
+        )
+        .unwrap();
+        // Cursor +3
+        let offset = fs.fd_seek(fd, 3, Whence::Cursor).unwrap();
+        assert_eq!(offset, 3);
+        // Cursor -1
+        let offset = fs.fd_seek(fd, -1, Whence::Cursor).unwrap();
+        assert_eq!(offset, 2);
+        let bytes = fs.read_fd(fd, 1).unwrap().unwrap();
+        assert_eq!(bytes[0], il::expr_const(0x43, 8));
+    }
+
+    #[test]
+    fn test_fd_seek_end() {
+        let mut fs = FileSystem::new(None).unwrap();
+        let fd = fs.create("/end_test").unwrap();
+        fs.write(
+            "/end_test",
+            vec![
+                il::expr_const(0x41, 8),
+                il::expr_const(0x42, 8),
+                il::expr_const(0x43, 8),
+                il::expr_const(0x44, 8),
+                il::expr_const(0x45, 8),
+            ],
+            0,
+        )
+        .unwrap();
+        // Seek to end
+        let offset = fs.fd_seek(fd, 0, Whence::End).unwrap();
+        assert_eq!(offset, 5);
+        // Seek end - 3
+        let offset = fs.fd_seek(fd, -3, Whence::End).unwrap();
+        assert_eq!(offset, 2);
+    }
+
+    #[test]
+    fn test_write_at_offset_past_eof_fills_zeros() {
+        let mut fs = FileSystem::new(None).unwrap();
+        fs.create("/gap_test").unwrap();
+        fs.write(
+            "/gap_test",
+            vec![il::expr_const(0x41, 8), il::expr_const(0x42, 8)],
+            0,
+        )
+        .unwrap();
+        // Write at offset 5 (gap of 3 bytes)
+        fs.write("/gap_test", vec![il::expr_const(0x99, 8)], 5)
+            .unwrap();
+        let bytes = fs.file_bytes("/gap_test").unwrap();
+        assert_eq!(bytes.len(), 6);
+        // Gap bytes should be zero
+        assert_eq!(bytes[2], il::expr_const(0, 8));
+        assert_eq!(bytes[3], il::expr_const(0, 8));
+        assert_eq!(bytes[4], il::expr_const(0, 8));
+        assert_eq!(bytes[5], il::expr_const(0x99, 8));
+    }
+
+    #[test]
+    fn test_write_to_nonexistent_creates_file() {
+        let mut fs = FileSystem::new(None).unwrap();
+        fs.write("/new_file", vec![il::expr_const(0x41, 8)], 0)
+            .unwrap();
+        let bytes = fs.file_bytes("/new_file").unwrap();
+        assert_eq!(bytes.len(), 1);
+        assert_eq!(bytes[0], il::expr_const(0x41, 8));
+    }
+
+    #[test]
+    fn test_write_to_nonexistent_with_offset() {
+        let mut fs = FileSystem::new(None).unwrap();
+        fs.write("/offset_new", vec![il::expr_const(0x99, 8)], 3)
+            .unwrap();
+        let bytes = fs.file_bytes("/offset_new").unwrap();
+        assert_eq!(bytes.len(), 4);
+        assert_eq!(bytes[0], il::expr_const(0, 8));
+        assert_eq!(bytes[1], il::expr_const(0, 8));
+        assert_eq!(bytes[2], il::expr_const(0, 8));
+        assert_eq!(bytes[3], il::expr_const(0x99, 8));
+    }
+
+    #[test]
+    fn test_close_fd_reclaims_highest() {
+        let mut fs = FileSystem::new(None).unwrap();
+        let fd = fs.create("/close_test").unwrap();
+        assert_eq!(fd, 3);
+        // next_fd should be 4
+        assert!(fs.close_fd(fd));
+        // After closing the highest fd, next_fd should go back to 3
+        let fd2 = fs.create("/close_test2").unwrap();
+        assert_eq!(fd2, 3);
+    }
+
+    #[test]
+    fn test_close_fd_gap_no_reclaim() {
+        let mut fs = FileSystem::new(None).unwrap();
+        let _fd3 = fs.create("/a").unwrap(); // fd 3
+        let _fd4 = fs.create("/b").unwrap(); // fd 4
+                                             // Close fd 3 (middle), fd 4 still exists
+        assert!(fs.close_fd(3));
+        // next_fd should stay at 5 since fd 4 still exists
+        let fd_next = fs.create("/c").unwrap();
+        assert_eq!(fd_next, 5);
+    }
+
+    #[test]
+    fn test_close_fd_invalid_returns_false() {
+        let mut fs = FileSystem::new(None).unwrap();
+        assert!(!fs.close_fd(99));
+    }
+
+    #[test]
+    fn test_fd_valid_after_close() {
+        let mut fs = FileSystem::new(None).unwrap();
+        let fd = fs.create("/valid_test").unwrap();
+        assert!(fs.fd_valid(fd));
+        fs.close_fd(fd);
+        assert!(!fs.fd_valid(fd));
+    }
+
+    #[test]
+    fn test_zeroize_empties_file() {
+        let mut fs = FileSystem::new(None).unwrap();
+        fs.create("/zero_test").unwrap();
+        fs.write(
+            "/zero_test",
+            vec![il::expr_const(0x41, 8), il::expr_const(0x42, 8)],
+            0,
+        )
+        .unwrap();
+        assert_eq!(fs.file_bytes("/zero_test").unwrap().len(), 2);
+        fs.zeroize("/zero_test");
+        assert!(fs.file_bytes("/zero_test").unwrap().is_empty());
+    }
+
+    #[test]
+    fn test_size_fd_invalid() {
+        let fs = FileSystem::new(None).unwrap();
+        assert!(fs.size_fd(99).is_none());
+    }
+
+    #[test]
+    fn test_write_fd_extends_file() {
+        let mut fs = FileSystem::new(None).unwrap();
+        let fd = fs.create("/extend_test").unwrap();
+        fs.write(
+            "/extend_test",
+            vec![il::expr_const(0x41, 8), il::expr_const(0x42, 8)],
+            0,
+        )
+        .unwrap();
+        // Seek to end via Set
+        fs.fd_seek(fd, 2, Whence::Set).unwrap();
+        // Write via fd past end
+        fs.write_fd(fd, vec![il::expr_const(0x43, 8), il::expr_const(0x44, 8)])
+            .unwrap();
+        let bytes = fs.file_bytes("/extend_test").unwrap();
+        assert_eq!(bytes.len(), 4);
+        assert_eq!(bytes[2], il::expr_const(0x43, 8));
+        assert_eq!(bytes[3], il::expr_const(0x44, 8));
+    }
 }
